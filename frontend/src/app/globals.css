@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: var(--font-instrument), sans-serif;
+  background: #102a3a;
+  color: #ede4d1;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button,
+select {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+button,
+a,
+input,
+select,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+:focus-visible {
+  outline: 3px solid #db9f3d;
+  outline-offset: 4px;
+}
+a {
+  color: inherit;
+}
+svg {
+  max-width: 100%;
+}
+input {
+  min-width: 0;
+}
+input[type="range"] {
+  width: 100%;
+  padding: 0;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+th {
+  text-align: left;
+  font-weight: 500;
+}
+figure {
+  margin: 0;
+}
+summary {
+  cursor: pointer;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}
