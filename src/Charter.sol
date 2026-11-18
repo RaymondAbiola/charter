@@ -12,6 +12,7 @@ import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 import {FullMath} from "v4-core/libraries/FullMath.sol";
 import {SafeCast} from "v4-core/libraries/SafeCast.sol";
 import {SqrtPriceMath} from "v4-core/libraries/SqrtPriceMath.sol";
+import {ProtocolFeeLibrary} from "v4-core/libraries/ProtocolFeeLibrary.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
@@ -19,6 +20,7 @@ import {Currency} from "v4-core/types/Currency.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
 import {SwapParams, ModifyLiquidityParams} from "v4-core/types/PoolOperation.sol";
+import {PassiveMath} from "./libraries/PassiveMath.sol";
 
 /// @title Charter
 /// @notice Liquidity managers lease depositor capital in one Uniswap v4 pool. Depositors are owed
@@ -33,6 +35,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     using LPFeeLibrary for uint24;
     using CurrencySettler for Currency;
     using SafeCast for uint256;
+    using ProtocolFeeLibrary for uint24;
 
     enum Action {
         Deposit,
@@ -42,6 +45,11 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     uint256 internal constant Q128 = 1 << 128;
     uint256 public constant DEAD_SHARES = 1000;
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
+
+    // transient snapshot taken in beforeSwap
+    uint256 internal constant T_FG0 = uint256(keccak256("charter.fg0")) - 1;
+    uint256 internal constant T_FG1 = uint256(keccak256("charter.fg1")) - 1;
+    uint256 internal constant T_SQRT = uint256(keccak256("charter.sqrt")) - 1;
 
     struct Config {
         Currency currency0;
@@ -69,6 +77,14 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     uint128 public passiveLiquidity;
     uint256 public idle0;
     uint256 public idle1;
+
+    /// @notice Depositor units currently leased to managers.
+    uint128 public leasedUnits;
+
+    /// @notice Fees one unit of depositor liquidity would have earned at full range, Q128, wrapping
+    /// like the pool's own fee growth. A lease owes the growth of these over its life.
+    uint256 public passiveGrowth0X128;
+    uint256 public passiveGrowth1X128;
 
     error WrongPool();
     error AlreadyBound();
@@ -116,8 +132,9 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     {
         if (!bound) revert NotBound();
         if (shares == 0) revert ZeroShares();
-        (amount0, amount1) =
-            abi.decode(poolManager.unlock(abi.encode(Action.Deposit, abi.encode(msg.sender, shares, to))), (uint256, uint256));
+        (amount0, amount1) = abi.decode(
+            poolManager.unlock(abi.encode(Action.Deposit, abi.encode(msg.sender, shares, to))), (uint256, uint256)
+        );
         if (amount0 > max0 || amount1 > max1) revert Slippage();
     }
 
@@ -127,8 +144,9 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         returns (uint256 amount0, uint256 amount1)
     {
         if (shares == 0) revert ZeroShares();
-        (amount0, amount1) =
-            abi.decode(poolManager.unlock(abi.encode(Action.Withdraw, abi.encode(msg.sender, shares, to))), (uint256, uint256));
+        (amount0, amount1) = abi.decode(
+            poolManager.unlock(abi.encode(Action.Withdraw, abi.encode(msg.sender, shares, to))), (uint256, uint256)
+        );
         if (amount0 < min0 || amount1 < min1) revert Slippage();
     }
 
@@ -230,7 +248,9 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     function _modifyPassive(int256 liquidityDelta) internal returns (BalanceDelta d) {
         (d,) = poolManager.modifyLiquidity(
             _key,
-            ModifyLiquidityParams({tickLower: fullLower, tickUpper: fullUpper, liquidityDelta: liquidityDelta, salt: 0}),
+            ModifyLiquidityParams({
+                tickLower: fullLower, tickUpper: fullUpper, liquidityDelta: liquidityDelta, salt: 0
+            }),
             ""
         );
     }
@@ -305,21 +325,78 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
+        (uint160 sqrtP,,,) = poolManager.getSlot0(poolId);
         if (lastSwapBlock != block.number) {
-            (uint160 sqrtP,,,) = poolManager.getSlot0(poolId);
             lastSwapBlock = uint64(block.number);
             blockStartSqrt = sqrtP;
         }
-        return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, baseFee | LPFeeLibrary.OVERRIDE_FEE_FLAG);
+        if (passiveLiquidity + leasedUnits != 0) {
+            (uint256 fg0, uint256 fg1) = poolManager.getFeeGrowthGlobals(poolId);
+            uint256 t0 = T_FG0;
+            uint256 t1 = T_FG1;
+            uint256 ts = T_SQRT;
+            assembly ("memory-safe") {
+                tstore(t0, fg0)
+                tstore(t1, fg1)
+                tstore(ts, sqrtP)
+            }
+        }
+        return
+            (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, baseFee | LPFeeLibrary.OVERRIDE_FEE_FLAG);
     }
 
-    function _afterSwap(address, PoolKey calldata, SwapParams calldata, BalanceDelta, bytes calldata)
+    function _afterSwap(address, PoolKey calldata, SwapParams calldata params, BalanceDelta delta, bytes calldata)
         internal
-        pure
         override
         returns (bytes4, int128)
     {
+        if (passiveLiquidity + leasedUnits != 0) _accruePassive(params.zeroForOne, delta);
         return (BaseHook.afterSwap.selector, 0);
+    }
+
+    function _accruePassive(bool zeroForOne, BalanceDelta delta) internal {
+        uint256 fgBefore;
+        uint256 sqrtBefore;
+        uint256 slot = zeroForOne ? T_FG0 : T_FG1;
+        uint256 ts = T_SQRT;
+        assembly ("memory-safe") {
+            fgBefore := tload(slot)
+            sqrtBefore := tload(ts)
+        }
+        (uint256 fg0, uint256 fg1) = poolManager.getFeeGrowthGlobals(poolId);
+        uint256 dfg;
+        unchecked {
+            dfg = (zeroForOne ? fg0 : fg1) - fgBefore;
+        }
+        if (dfg == 0) return;
+
+        uint256 g;
+        if (leasedUnits == 0) {
+            // with nothing leased the counterfactual is what actually happened
+            g = dfg;
+        } else {
+            int128 paid = zeroForOne ? delta.amount0() : delta.amount1();
+            if (paid >= 0) return;
+            (uint160 sqrtAfter,, uint24 protocolFee,) = poolManager.getSlot0(poolId);
+            uint16 pf = zeroForOne ? protocolFee.getZeroForOneFee() : protocolFee.getOneForZeroFee();
+            uint256 fee = PassiveMath.lpFee(uint128(-paid), baseFee, pf);
+            g = PassiveMath.growth(
+                fee,
+                dfg,
+                _managedInRange(uint160(sqrtBefore), sqrtAfter),
+                passiveLiquidity,
+                passiveLiquidity + leasedUnits
+            );
+        }
+        unchecked {
+            if (zeroForOne) passiveGrowth0X128 += g;
+            else passiveGrowth1X128 += g;
+        }
+    }
+
+    /// @dev Sum over leases of their liquidity weighted by how much of the swap's path fell in range.
+    function _managedInRange(uint160, uint160) internal view virtual returns (uint256) {
+        return 0;
     }
 
     /// @notice Spot clamped to the block's opening price, so a price pushed inside the current
