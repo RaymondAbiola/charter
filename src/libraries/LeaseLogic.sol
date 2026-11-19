@@ -15,6 +15,8 @@ library LeaseLogic {
 
     error RangeTooThin();
 
+    uint256 internal constant YEAR = 365 days;
+
     struct OpenArgs {
         address manager;
         uint256 slot;
@@ -42,12 +44,38 @@ library LeaseLogic {
         l.manager = a.manager;
         l.rentPips = a.rentPips;
         l.openedAt = uint64(block.timestamp);
+        l.rentPaidAt = uint64(block.timestamp);
         l.units = a.units;
         l.growth0Start = b.passiveGrowth0X128;
         l.growth1Start = b.passiveGrowth1X128;
         l.bond = a.bond;
         Positions.credit(b, l, env, uint128(d.amount0()), uint128(d.amount1()));
         liquidity = _enter(b, l, env, a.slot, a.tickLower, a.tickUpper);
+    }
+
+    /// @notice Rent accrued and not yet paid on a lease worth `value` (token1).
+    function rentDue(Lease storage l, uint256 value) internal view returns (uint256) {
+        return _rentScaled(l, value) / (1e6 * YEAR);
+    }
+
+    function _rentScaled(Lease storage l, uint256 value) private view returns (uint256) {
+        return value * l.rentPips * (block.timestamp - l.rentPaidAt) + l.rentCarry;
+    }
+
+    /// @notice Moves accrued rent from the bond to depositor idle. Bond and idle are both token1
+    /// claims the hook already holds, so this is bookkeeping only.
+    /// @dev The remainder is carried exactly, so neither rounding nor a short bond loses rent.
+    function chargeRent(Book storage b, Lease storage l, uint256 value) external returns (uint256 paid) {
+        uint256 total = _rentScaled(l, value);
+        l.rentPaidAt = uint64(block.timestamp);
+        uint256 due = total / (1e6 * YEAR);
+        uint256 bond = l.bond;
+        paid = due <= bond ? due : bond;
+        l.rentCarry = total - paid * (1e6 * YEAR);
+        if (paid == 0) return 0;
+        l.bond = bond - paid;
+        b.totalBond -= paid;
+        b.idle1 += paid;
     }
 
     function rebalance(Book storage b, Lease storage l, Env memory env, uint256 slot, int24 lo, int24 hi)

@@ -99,6 +99,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     error BadRange();
     error NotEnoughCapital();
     error BondTooSmall();
+    error NoLease();
 
     event Bound(PoolId indexed id, uint160 sqrtPriceX96);
     event Deposit(address indexed payer, address indexed to, uint256 shares, uint256 amount0, uint256 amount1);
@@ -114,6 +115,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         uint128 liquidity
     );
     event Rebalanced(uint256 indexed slot, int24 tickLower, int24 tickUpper, uint128 liquidity);
+    event RentPaid(uint256 indexed slot, uint256 amount);
 
     constructor(IPoolManager manager, Config memory cfg) BaseHook(manager) ERC20("Charter LP", "CHARTER-LP") {
         // native currency would need payable flows; not supported yet
@@ -200,7 +202,26 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     function rebalance(uint256 slot, int24 tickLower, int24 tickUpper) external {
         if (_leases[slot].manager != msg.sender) revert NotManager();
         _checkRange(tickLower, tickUpper);
+        _chargeRent(slot);
         poolManager.unlock(abi.encode(Action.Rebalance, abi.encode(slot, tickLower, tickUpper)));
+    }
+
+    /// @notice Pay a lease's accrued rent from its bond to depositors. Anyone can call it.
+    function collectRent(uint256 slot) external returns (uint256 paid) {
+        if (_leases[slot].manager == address(0)) revert NoLease();
+        return _chargeRent(slot);
+    }
+
+    function _chargeRent(uint256 slot) internal returns (uint256 paid) {
+        Lease storage l = _leases[slot];
+        paid = LeaseLogic.chargeRent(_book, l, _unitsValue(l.units));
+        if (paid > 0) emit RentPaid(slot, paid);
+    }
+
+    /// @dev token1 value of `units` at full range, amounts at spot and priced at the settlement price.
+    function _unitsValue(uint128 units) internal view returns (uint256) {
+        (uint256 a0, uint256 a1) = Positions.fullRangeAmounts(_env(), _spot(), units, false);
+        return Positions.valueAt(a0, a1, settlementSqrtPrice());
     }
 
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
@@ -307,13 +328,25 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     }
 
     /// @notice A lease's books at the settlement price: what it owes depositors, what it holds,
-    /// and the equity left once its bond is counted. Values are in token1.
-    function leaseAccount(uint256 slot) public view returns (LeaseMath.Account memory a, uint256 bond, int256 equity) {
+    /// and the equity left once its bond and unpaid rent are counted. Values are in token1.
+    function leaseAccount(uint256 slot)
+        public
+        view
+        returns (LeaseMath.Account memory a, uint256 bond, uint256 rent, int256 equity)
+    {
         Lease storage l = _leases[slot];
-        if (l.manager == address(0)) return (a, 0, 0);
+        if (l.manager == address(0)) return (a, 0, 0, 0);
         a = LeaseMath.account(_book, l, _env(), slot, settlementSqrtPrice());
         bond = l.bond;
-        equity = LeaseMath.equity(a, bond);
+        rent = rentDue(slot);
+        equity = LeaseMath.equity(a, bond) - int256(rent);
+    }
+
+    /// @notice Rent a lease has accrued and not yet paid, in token1.
+    function rentDue(uint256 slot) public view returns (uint256) {
+        Lease storage l = _leases[slot];
+        if (l.manager == address(0)) return 0;
+        return LeaseLogic.rentDue(l, _unitsValue(l.units));
     }
 
     /// @notice What depositors collectively own right now: full-range liquidity units plus idle tokens,

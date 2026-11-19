@@ -26,12 +26,15 @@ struct Lease {
     uint128 liquidity;
     int24 tickLower;
     int24 tickUpper;
+    uint64 rentPaidAt;
     uint128 units;
     uint256 growth0Start;
     uint256 growth1Start;
     uint256 bond;
     uint256 held0;
     uint256 held1;
+    // unpaid rent in value * pips * seconds, so no fraction is ever rounded away
+    uint256 rentCarry;
 }
 
 struct Env {

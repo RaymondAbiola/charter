@@ -106,6 +106,10 @@ abstract contract Fixture is Test, Deployers {
         vm.roll(vm.getBlockNumber() + 1);
     }
 
+    function _warp(uint256 dt) internal {
+        vm.warp(vm.getBlockTimestamp() + dt);
+    }
+
     function _sqrt() internal view returns (uint160 s) {
         (s,,,) = StateLibrary.getSlot0(manager, key.toId());
     }

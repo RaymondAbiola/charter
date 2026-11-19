@@ -29,7 +29,7 @@ contract ValuationTest is Fixture {
     }
 
     function _account() internal view returns (LeaseMath.Account memory a, uint256 bond, int256 equity) {
-        return charter.leaseAccount(0);
+        (a, bond,, equity) = charter.leaseAccount(0);
     }
 
     function _value(uint256 a0, uint256 a1, uint160 s) internal pure returns (uint256) {
@@ -37,7 +37,7 @@ contract ValuationTest is Fixture {
     }
 
     function test_emptySlotIsZero() public view {
-        (LeaseMath.Account memory a, uint256 bond, int256 equity) = charter.leaseAccount(1);
+        (LeaseMath.Account memory a, uint256 bond,, int256 equity) = charter.leaseAccount(1);
         assertEq(a.owedValue, 0);
         assertEq(a.heldValue, 0);
         assertEq(bond, 0);
