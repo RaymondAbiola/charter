@@ -17,6 +17,8 @@ library LeaseLogic {
 
     error RangeTooThin();
 
+    event RentPaid(uint256 indexed slot, uint256 amount);
+
     uint256 internal constant YEAR = 365 days;
 
     /// @dev How a closed lease was split. Values in token1 at the settlement price.
@@ -103,7 +105,8 @@ library LeaseLogic {
         external
         returns (Settlement memory s)
     {
-        _chargeRent(b, l, value);
+        uint256 rent = _chargeRent(b, l, value);
+        if (rent > 0) emit RentPaid(slot, rent);
         _exit(b, l, env, slot);
         s.manager = l.manager;
 

@@ -47,7 +47,8 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         Open,
         Rebalance,
         Liquidate,
-        Repassivate
+        Repassivate,
+        Exit
     }
 
     struct Config {
@@ -133,6 +134,16 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         uint256 uncovered
     );
     event Repassivated(uint128 liquidity);
+    event LeaseEnded(
+        uint256 indexed slot,
+        address indexed manager,
+        uint256 owedValue,
+        uint256 heldValue,
+        uint256 bondUsed,
+        uint256 uncovered,
+        uint256 toManager0,
+        uint256 toManager1
+    );
 
     constructor(IPoolManager manager, Config memory cfg) BaseHook(manager) ERC20("Charter LP", "CHARTER-LP") {
         // native currency would need payable flows; not supported yet
@@ -227,6 +238,13 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         poolManager.unlock(abi.encode(Action.Rebalance, abi.encode(slot, tickLower, tickUpper)));
     }
 
+    /// @notice End your lease. It settles like a liquidation: rent first, liquidity pulled, then
+    /// depositors take what they are owed at the clamped price and you keep the rest.
+    function exitLease(uint256 slot) external {
+        if (_leases[slot].manager != msg.sender) revert NotManager();
+        poolManager.unlock(abi.encode(Action.Exit, abi.encode(slot)));
+    }
+
     /// @notice Close a lease whose equity is below the maintenance margin. Swaps already do this;
     /// this covers a lease whose bond was eaten by rent while nobody traded. Anyone can call it.
     function liquidate(uint256 slot) external {
@@ -270,6 +288,10 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         if (action == Action.Rebalance) return _rebalance(args);
         if (action == Action.Liquidate) {
             _liquidate(abi.decode(args, (uint256)));
+            return "";
+        }
+        if (action == Action.Exit) {
+            _exit(abi.decode(args, (uint256)));
             return "";
         }
         uint128 liq = LeaseLogic.repassivate(_book, _env());
@@ -318,6 +340,16 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     function _liquidate(uint256 slot) internal {
         RiskLogic.liquidate(_book, _leases[slot], _env(), slot, settlementSqrtPrice());
         delete _guards[slot];
+    }
+
+    function _exit(uint256 slot) internal {
+        Lease storage l = _leases[slot];
+        uint160 s = settlementSqrtPrice();
+        LeaseLogic.Settlement memory st = LeaseLogic.close(_book, l, _env(), slot, s, _unitsValue(l.units));
+        delete _guards[slot];
+        emit LeaseEnded(
+            slot, st.manager, st.owedValue, st.heldValue, st.bondUsed, st.uncovered, st.toManager0, st.toManager1
+        );
     }
 
     function _underwater(uint256 slot, uint160 sqrtP) internal view returns (bool) {
