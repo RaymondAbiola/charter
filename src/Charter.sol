@@ -24,6 +24,7 @@ import {PassiveMath} from "./libraries/PassiveMath.sol";
 import {Positions} from "./libraries/Positions.sol";
 import {VaultLogic} from "./libraries/VaultLogic.sol";
 import {LeaseLogic} from "./libraries/LeaseLogic.sol";
+import {LeaseMath} from "./libraries/LeaseMath.sol";
 
 /// @title Charter
 /// @notice Liquidity managers lease depositor capital in one Uniswap v4 pool. Depositors are owed
@@ -303,6 +304,16 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
 
     function lease(uint256 slot) external view returns (Lease memory) {
         return _leases[slot];
+    }
+
+    /// @notice A lease's books at the settlement price: what it owes depositors, what it holds,
+    /// and the equity left once its bond is counted. Values are in token1.
+    function leaseAccount(uint256 slot) public view returns (LeaseMath.Account memory a, uint256 bond, int256 equity) {
+        Lease storage l = _leases[slot];
+        if (l.manager == address(0)) return (a, 0, 0);
+        a = LeaseMath.account(_book, l, _env(), slot, settlementSqrtPrice());
+        bond = l.bond;
+        equity = LeaseMath.equity(a, bond);
     }
 
     /// @notice What depositors collectively own right now: full-range liquidity units plus idle tokens,
