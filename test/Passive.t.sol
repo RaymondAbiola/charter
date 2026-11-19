@@ -29,7 +29,7 @@ contract PassiveGrowthTest is Fixture {
     function _swaps(uint256 seed, uint256 n) internal {
         for (uint256 i; i < n; i++) {
             uint256 r = uint256(keccak256(abi.encode(seed, i)));
-            vm.roll(block.number + 1);
+            _nextBlock();
             uint256 size = 1e18 + (r >> 8) % 60e18;
             _swapAs(mallory, r & 1 == 1, -int256(size));
         }

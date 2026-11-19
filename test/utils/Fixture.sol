@@ -22,6 +22,8 @@ abstract contract Fixture is Test, Deployers {
     uint24 constant BASE_FEE = 3000;
     int24 constant SPACING = 60;
     uint16 constant CLAMP_SQRT_BPS = 100;
+    uint8 constant MAX_LEASES = 4;
+    uint16 constant MIN_BOND_BPS = 500;
 
     Charter charter;
     int24 FL;
@@ -48,7 +50,13 @@ abstract contract Fixture is Test, Deployers {
 
     function _config() internal view returns (Charter.Config memory) {
         return Charter.Config({
-            currency0: currency0, currency1: currency1, tickSpacing: SPACING, baseFee: BASE_FEE, clampSqrtBps: CLAMP_SQRT_BPS
+            currency0: currency0,
+            currency1: currency1,
+            tickSpacing: SPACING,
+            baseFee: BASE_FEE,
+            clampSqrtBps: CLAMP_SQRT_BPS,
+            maxLeases: MAX_LEASES,
+            minBondBps: MIN_BOND_BPS
         });
     }
 
@@ -91,6 +99,11 @@ abstract contract Fixture is Test, Deployers {
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             ZERO_BYTES
         );
+    }
+
+    // via-ir can reuse an earlier block.number read inside one test, so ask the cheatcode
+    function _nextBlock() internal {
+        vm.roll(vm.getBlockNumber() + 1);
     }
 
     function _sqrt() internal view returns (uint160 s) {

@@ -34,7 +34,9 @@ contract CharterBindingTest is Fixture {
             ? (Currency.wrap(address(t)), currency1)
             : (currency1, Currency.wrap(address(t)));
         vm.expectRevert();
-        manager.initialize(PoolKey(a, b, LPFeeLibrary.DYNAMIC_FEE_FLAG, SPACING, IHooks(address(fresh))), SQRT_PRICE_1_1);
+        manager.initialize(
+            PoolKey(a, b, LPFeeLibrary.DYNAMIC_FEE_FLAG, SPACING, IHooks(address(fresh))), SQRT_PRICE_1_1
+        );
         assertFalse(fresh.bound());
     }
 
@@ -82,18 +84,18 @@ contract CharterSwapTest is Fixture {
         uint160 open = _sqrt();
         _swapAs(alice, true, -10e18);
         assertEq(charter.blockStartSqrt(), open);
-        assertEq(charter.lastSwapBlock(), block.number);
+        assertEq(charter.lastSwapBlock(), vm.getBlockNumber());
         _swapAs(alice, true, -10e18);
         assertEq(charter.blockStartSqrt(), open, "unchanged within the block");
 
-        vm.roll(block.number + 1);
+        _nextBlock();
         uint160 next = _sqrt();
         _swapAs(alice, false, -1e18);
         assertEq(charter.blockStartSqrt(), next);
     }
 
     function test_settlementPriceIsClamped() public {
-        vm.roll(block.number + 1);
+        _nextBlock();
         uint160 open = _sqrt();
         _swapAs(mallory, true, -400e18);
         uint160 spot = _sqrt();
@@ -101,7 +103,7 @@ contract CharterSwapTest is Fixture {
         assertLt(spot, uint256(open) * (10_000 - CLAMP_SQRT_BPS) / 10_000, "push went past the clamp");
         assertEq(s, uint256(open) * (10_000 - CLAMP_SQRT_BPS) / 10_000);
 
-        vm.roll(block.number + 1);
+        _nextBlock();
         assertEq(charter.settlementSqrtPrice(), spot, "a new block takes spot as is");
     }
 

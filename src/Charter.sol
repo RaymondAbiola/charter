@@ -2,7 +2,6 @@
 pragma solidity ^0.8.26;
 
 import {BaseHook} from "@uniswap/hooks/base/BaseHook.sol";
-import {CurrencySettler} from "@uniswap/hooks/utils/CurrencySettler.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "v4-core/interfaces/callback/IUnlockCallback.sol";
@@ -19,27 +18,42 @@ import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
-import {SwapParams, ModifyLiquidityParams} from "v4-core/types/PoolOperation.sol";
+import {SwapParams} from "v4-core/types/PoolOperation.sol";
+import {Book, Lease, Env} from "./types/CharterTypes.sol";
 import {PassiveMath} from "./libraries/PassiveMath.sol";
+import {Positions} from "./libraries/Positions.sol";
+import {VaultLogic} from "./libraries/VaultLogic.sol";
+import {LeaseLogic} from "./libraries/LeaseLogic.sol";
 
 /// @title Charter
 /// @notice Liquidity managers lease depositor capital in one Uniswap v4 pool. Depositors are owed
 /// the passive full-range return plus rent; managers bond, run their own ranges and keep or cover
 /// the difference.
 /// @dev Shares are pro-rata claims on a bundle: units of full-range liquidity plus idle tokens.
-/// Deposits add a matching slice and withdrawals take one out, so share accounting never prices
-/// anything and cannot be moved by pushing the pool price.
+/// Heavy flows live in external libraries called by delegatecall, so the hook stays the owner of
+/// every position and the caller the PoolManager sees.
 contract Charter is BaseHook, IUnlockCallback, ERC20 {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
     using LPFeeLibrary for uint24;
-    using CurrencySettler for Currency;
     using SafeCast for uint256;
     using ProtocolFeeLibrary for uint24;
 
     enum Action {
         Deposit,
-        Withdraw
+        Withdraw,
+        Open,
+        Rebalance
+    }
+
+    struct Config {
+        Currency currency0;
+        Currency currency1;
+        int24 tickSpacing;
+        uint24 baseFee;
+        uint16 clampSqrtBps;
+        uint8 maxLeases;
+        uint16 minBondBps;
     }
 
     uint256 internal constant Q128 = 1 << 128;
@@ -51,19 +65,13 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     uint256 internal constant T_FG1 = uint256(keccak256("charter.fg1")) - 1;
     uint256 internal constant T_SQRT = uint256(keccak256("charter.sqrt")) - 1;
 
-    struct Config {
-        Currency currency0;
-        Currency currency1;
-        int24 tickSpacing;
-        uint24 baseFee;
-        uint16 clampSqrtBps;
-    }
-
     Currency public immutable currency0;
     Currency public immutable currency1;
     int24 public immutable tickSpacing;
     uint24 public immutable baseFee;
     uint16 public immutable clampSqrtBps;
+    uint8 public immutable maxLeases;
+    uint16 public immutable minBondBps;
     int24 public immutable fullLower;
     int24 public immutable fullUpper;
 
@@ -74,17 +82,8 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     uint64 public lastSwapBlock;
     uint160 public blockStartSqrt;
 
-    uint128 public passiveLiquidity;
-    uint256 public idle0;
-    uint256 public idle1;
-
-    /// @notice Depositor units currently leased to managers.
-    uint128 public leasedUnits;
-
-    /// @notice Fees one unit of depositor liquidity would have earned at full range, Q128, wrapping
-    /// like the pool's own fee growth. A lease owes the growth of these over its life.
-    uint256 public passiveGrowth0X128;
-    uint256 public passiveGrowth1X128;
+    Book internal _book;
+    mapping(uint256 slot => Lease) internal _leases;
 
     error WrongPool();
     error AlreadyBound();
@@ -92,10 +91,28 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     error BadConfig();
     error ZeroShares();
     error Slippage();
+    error LeasesActive();
+    error BadSlot();
+    error SlotTaken();
+    error NotManager();
+    error BadRange();
+    error NotEnoughCapital();
+    error BondTooSmall();
 
     event Bound(PoolId indexed id, uint160 sqrtPriceX96);
     event Deposit(address indexed payer, address indexed to, uint256 shares, uint256 amount0, uint256 amount1);
     event Withdraw(address indexed owner, address indexed to, uint256 shares, uint256 amount0, uint256 amount1);
+    event LeaseOpened(
+        uint256 indexed slot,
+        address indexed manager,
+        uint128 units,
+        uint32 rentPips,
+        uint256 bond,
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 liquidity
+    );
+    event Rebalanced(uint256 indexed slot, int24 tickLower, int24 tickUpper, uint128 liquidity);
 
     constructor(IPoolManager manager, Config memory cfg) BaseHook(manager) ERC20("Charter LP", "CHARTER-LP") {
         // native currency would need payable flows; not supported yet
@@ -104,11 +121,16 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         if (cfg.baseFee > LPFeeLibrary.MAX_LP_FEE || cfg.clampSqrtBps == 0 || cfg.clampSqrtBps >= 10_000) {
             revert BadConfig();
         }
+        if (cfg.maxLeases == 0 || cfg.maxLeases > 16 || cfg.minBondBps == 0 || cfg.minBondBps > 10_000) {
+            revert BadConfig();
+        }
         currency0 = cfg.currency0;
         currency1 = cfg.currency1;
         tickSpacing = cfg.tickSpacing;
         baseFee = cfg.baseFee;
         clampSqrtBps = cfg.clampSqrtBps;
+        maxLeases = cfg.maxLeases;
+        minBondBps = cfg.minBondBps;
         fullLower = TickMath.minUsableTick(cfg.tickSpacing);
         fullUpper = TickMath.maxUsableTick(cfg.tickSpacing);
     }
@@ -119,11 +141,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         p.afterSwap = true;
     }
 
-    function poolKey() external view returns (PoolKey memory) {
-        return _key;
-    }
-
-    // ------------------------------------------------------------------ deposits
+    // ------------------------------------------------------------------ depositors
 
     /// @notice Mint `shares` by adding the matching slice of the vault's bundle.
     function deposit(uint256 shares, uint256 max0, uint256 max1, address to)
@@ -132,6 +150,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     {
         if (!bound) revert NotBound();
         if (shares == 0) revert ZeroShares();
+        if (_book.leasedUnits != 0) revert LeasesActive();
         (amount0, amount1) = abi.decode(
             poolManager.unlock(abi.encode(Action.Deposit, abi.encode(msg.sender, shares, to))), (uint256, uint256)
         );
@@ -144,43 +163,57 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         returns (uint256 amount0, uint256 amount1)
     {
         if (shares == 0) revert ZeroShares();
+        if (_book.leasedUnits != 0) revert LeasesActive();
         (amount0, amount1) = abi.decode(
             poolManager.unlock(abi.encode(Action.Withdraw, abi.encode(msg.sender, shares, to))), (uint256, uint256)
         );
         if (amount0 < min0 || amount1 < min1) revert Slippage();
     }
 
+    // ------------------------------------------------------------------ managers
+
+    /// @notice Lease `units` of depositor liquidity into `slot` and run it in `[tickLower, tickUpper)`.
+    /// @param rentPips annual rent as millionths of the leased value
+    /// @param bond token1 posted as security, at least `minBondBps` of the leased value
+    function openLease(uint256 slot, uint128 units, uint32 rentPips, uint256 bond, int24 tickLower, int24 tickUpper)
+        external
+    {
+        if (!bound) revert NotBound();
+        if (slot >= maxLeases) revert BadSlot();
+        if (_leases[slot].manager != address(0)) revert SlotTaken();
+        if (units == 0 || units > _book.passiveLiquidity) revert NotEnoughCapital();
+        _checkRange(tickLower, tickUpper);
+        if (bond < minBond(units)) revert BondTooSmall();
+        LeaseLogic.OpenArgs memory a = LeaseLogic.OpenArgs({
+            manager: msg.sender,
+            slot: slot,
+            units: units,
+            rentPips: rentPips,
+            bond: bond,
+            tickLower: tickLower,
+            tickUpper: tickUpper
+        });
+        poolManager.unlock(abi.encode(Action.Open, abi.encode(a)));
+    }
+
+    function rebalance(uint256 slot, int24 tickLower, int24 tickUpper) external {
+        if (_leases[slot].manager != msg.sender) revert NotManager();
+        _checkRange(tickLower, tickUpper);
+        poolManager.unlock(abi.encode(Action.Rebalance, abi.encode(slot, tickLower, tickUpper)));
+    }
+
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
         (Action action, bytes memory args) = abi.decode(data, (Action, bytes));
         if (action == Action.Deposit) return _deposit(args);
-        return _withdraw(args);
+        if (action == Action.Withdraw) return _withdraw(args);
+        if (action == Action.Open) return _open(args);
+        return _rebalance(args);
     }
 
     function _deposit(bytes memory args) internal returns (bytes memory) {
         (address payer, uint256 shares, address to) = abi.decode(args, (address, uint256, address));
-        _collectPassive();
-
         uint256 supply = totalSupply();
-        uint128 dl;
-        uint256 extra0;
-        uint256 extra1;
-        if (supply == 0) {
-            if (shares <= DEAD_SHARES) revert ZeroShares();
-            dl = shares.toUint128();
-        } else {
-            dl = FullMath.mulDivRoundingUp(passiveLiquidity, shares, supply).toUint128();
-            extra0 = FullMath.mulDivRoundingUp(idle0, shares, supply);
-            extra1 = FullMath.mulDivRoundingUp(idle1, shares, supply);
-        }
-
-        (uint256 owe0, uint256 owe1) = _owed(_modifyPassive(int256(uint256(dl))));
-        uint256 amount0 = owe0 + extra0;
-        uint256 amount1 = owe1 + extra1;
-        currency0.settle(poolManager, payer, amount0, false);
-        currency1.settle(poolManager, payer, amount1, false);
-        _toIdle(extra0, extra1);
-        passiveLiquidity += dl;
-
+        (uint256 amount0, uint256 amount1) = VaultLogic.deposit(_book, _env(), payer, shares, supply, DEAD_SHARES);
         if (supply == 0) {
             _mint(DEAD, DEAD_SHARES);
             _mint(to, shares - DEAD_SHARES);
@@ -193,41 +226,97 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
 
     function _withdraw(bytes memory args) internal returns (bytes memory) {
         (address owner, uint256 shares, address to) = abi.decode(args, (address, uint256, address));
-        _collectPassive();
-
         uint256 supply = totalSupply();
-        uint128 dl = FullMath.mulDiv(passiveLiquidity, shares, supply).toUint128();
-        uint256 out0 = FullMath.mulDiv(idle0, shares, supply);
-        uint256 out1 = FullMath.mulDiv(idle1, shares, supply);
         _burn(owner, shares);
-
-        _fromIdle(out0, out1);
-        if (dl > 0) {
-            BalanceDelta d = _modifyPassive(-int256(uint256(dl)));
-            out0 += uint128(d.amount0());
-            out1 += uint128(d.amount1());
-            passiveLiquidity -= dl;
-        }
-        currency0.take(poolManager, to, out0, false);
-        currency1.take(poolManager, to, out1, false);
+        (uint256 out0, uint256 out1) = VaultLogic.withdraw(_book, _env(), to, shares, supply);
         emit Withdraw(owner, to, shares, out0, out1);
         return abi.encode(out0, out1);
     }
 
+    function _open(bytes memory args) internal returns (bytes memory) {
+        LeaseLogic.OpenArgs memory a = abi.decode(args, (LeaseLogic.OpenArgs));
+        uint128 liq = LeaseLogic.open(_book, _leases[a.slot], _env(), a);
+        emit LeaseOpened(a.slot, a.manager, a.units, a.rentPips, a.bond, a.tickLower, a.tickUpper, liq);
+        return "";
+    }
+
+    function _rebalance(bytes memory args) internal returns (bytes memory) {
+        (uint256 slot, int24 lo, int24 hi) = abi.decode(args, (uint256, int24, int24));
+        uint128 liq = LeaseLogic.rebalance(_book, _leases[slot], _env(), slot, lo, hi);
+        emit Rebalanced(slot, lo, hi, liq);
+        return "";
+    }
+
+    function _checkRange(int24 lo, int24 hi) internal view {
+        if (lo >= hi || lo < fullLower || hi > fullUpper || lo % tickSpacing != 0 || hi % tickSpacing != 0) {
+            revert BadRange();
+        }
+    }
+
+    function _env() internal view returns (Env memory) {
+        return Env({pm: poolManager, key: _key, fullLower: fullLower, fullUpper: fullUpper});
+    }
+
     // ------------------------------------------------------------------ views
+
+    function poolKey() external view returns (PoolKey memory) {
+        return _key;
+    }
+
+    function passiveLiquidity() external view returns (uint128) {
+        return _book.passiveLiquidity;
+    }
+
+    function leasedUnits() external view returns (uint128) {
+        return _book.leasedUnits;
+    }
+
+    function idle0() external view returns (uint256) {
+        return _book.idle0;
+    }
+
+    function idle1() external view returns (uint256) {
+        return _book.idle1;
+    }
+
+    function totalHeld0() external view returns (uint256) {
+        return _book.totalHeld0;
+    }
+
+    function totalHeld1() external view returns (uint256) {
+        return _book.totalHeld1;
+    }
+
+    function totalBond() external view returns (uint256) {
+        return _book.totalBond;
+    }
+
+    /// @notice Fees one unit of depositor liquidity would have earned at full range, Q128, wrapping
+    /// like the pool's own fee growth. A lease owes the growth of these over its life.
+    function passiveGrowth0X128() external view returns (uint256) {
+        return _book.passiveGrowth0X128;
+    }
+
+    function passiveGrowth1X128() external view returns (uint256) {
+        return _book.passiveGrowth1X128;
+    }
+
+    function lease(uint256 slot) external view returns (Lease memory) {
+        return _leases[slot];
+    }
 
     /// @notice What depositors collectively own right now: full-range liquidity units plus idle tokens,
     /// counting fees the passive position has earned but not yet collected.
     function bundle() public view returns (uint128 liquidity, uint256 amount0, uint256 amount1) {
         (uint256 f0, uint256 f1) = _pendingPassiveFees();
-        return (passiveLiquidity, idle0 + f0, idle1 + f1);
+        return (_book.passiveLiquidity, _book.idle0 + f0, _book.idle1 + f1);
     }
 
     function previewDeposit(uint256 shares) external view returns (uint256 amount0, uint256 amount1) {
         uint256 supply = totalSupply();
         (uint128 l, uint256 b0, uint256 b1) = bundle();
         uint128 dl = supply == 0 ? shares.toUint128() : FullMath.mulDivRoundingUp(l, shares, supply).toUint128();
-        (amount0, amount1) = _fullRangeAmounts(dl, true);
+        (amount0, amount1) = Positions.fullRangeAmounts(_env(), _spot(), dl, true);
         if (supply != 0) {
             amount0 += FullMath.mulDivRoundingUp(b0, shares, supply);
             amount1 += FullMath.mulDivRoundingUp(b1, shares, supply);
@@ -238,65 +327,37 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         uint256 supply = totalSupply();
         if (supply == 0) return (0, 0);
         (uint128 l, uint256 b0, uint256 b1) = bundle();
-        (amount0, amount1) = _fullRangeAmounts(FullMath.mulDiv(l, shares, supply).toUint128(), false);
+        (amount0, amount1) =
+            Positions.fullRangeAmounts(_env(), _spot(), FullMath.mulDiv(l, shares, supply).toUint128(), false);
         amount0 += FullMath.mulDiv(b0, shares, supply);
         amount1 += FullMath.mulDiv(b1, shares, supply);
     }
 
-    // ------------------------------------------------------------------ position plumbing
-
-    function _modifyPassive(int256 liquidityDelta) internal returns (BalanceDelta d) {
-        (d,) = poolManager.modifyLiquidity(
-            _key,
-            ModifyLiquidityParams({
-                tickLower: fullLower, tickUpper: fullUpper, liquidityDelta: liquidityDelta, salt: 0
-            }),
-            ""
-        );
+    /// @notice Smallest bond for leasing `units`: `minBondBps` of their full-range value at the settlement price.
+    function minBond(uint128 units) public view returns (uint256) {
+        uint160 s = settlementSqrtPrice();
+        (uint256 a0, uint256 a1) = Positions.fullRangeAmounts(_env(), s, units, true);
+        return FullMath.mulDivRoundingUp(Positions.valueAt(a0, a1, s), minBondBps, 10_000);
     }
 
-    function _collectPassive() internal {
-        if (passiveLiquidity == 0) return;
-        BalanceDelta d = _modifyPassive(0);
-        _toIdle(uint128(d.amount0()), uint128(d.amount1()));
+    /// @notice Spot clamped to the block's opening price, so a price pushed inside the current
+    /// block cannot move a settlement by more than the clamp.
+    function settlementSqrtPrice() public view returns (uint160) {
+        uint160 spot = _spot();
+        if (lastSwapBlock != block.number) return spot;
+        uint256 lo = uint256(blockStartSqrt) * (10_000 - clampSqrtBps) / 10_000;
+        uint256 hi = uint256(blockStartSqrt) * (10_000 + clampSqrtBps) / 10_000;
+        if (spot < lo) return uint160(lo);
+        if (spot > hi) return uint160(hi);
+        return spot;
     }
 
-    function _toIdle(uint256 a0, uint256 a1) internal {
-        if (a0 > 0) {
-            poolManager.mint(address(this), currency0.toId(), a0);
-            idle0 += a0;
-        }
-        if (a1 > 0) {
-            poolManager.mint(address(this), currency1.toId(), a1);
-            idle1 += a1;
-        }
-    }
-
-    function _fromIdle(uint256 a0, uint256 a1) internal {
-        if (a0 > 0) {
-            idle0 -= a0;
-            poolManager.burn(address(this), currency0.toId(), a0);
-        }
-        if (a1 > 0) {
-            idle1 -= a1;
-            poolManager.burn(address(this), currency1.toId(), a1);
-        }
-    }
-
-    function _owed(BalanceDelta d) internal pure returns (uint256, uint256) {
-        int128 a0 = d.amount0();
-        int128 a1 = d.amount1();
-        return (a0 < 0 ? uint128(-a0) : 0, a1 < 0 ? uint128(-a1) : 0);
-    }
-
-    function _fullRangeAmounts(uint128 l, bool roundUp) internal view returns (uint256 a0, uint256 a1) {
-        (uint160 sqrtP,,,) = poolManager.getSlot0(poolId);
-        a0 = SqrtPriceMath.getAmount0Delta(sqrtP, TickMath.getSqrtPriceAtTick(fullUpper), l, roundUp);
-        a1 = SqrtPriceMath.getAmount1Delta(TickMath.getSqrtPriceAtTick(fullLower), sqrtP, l, roundUp);
+    function _spot() internal view returns (uint160 sqrtP) {
+        (sqrtP,,,) = poolManager.getSlot0(poolId);
     }
 
     function _pendingPassiveFees() internal view returns (uint256 f0, uint256 f1) {
-        if (passiveLiquidity == 0) return (0, 0);
+        if (_book.passiveLiquidity == 0) return (0, 0);
         (uint128 l, uint256 last0, uint256 last1) =
             poolManager.getPositionInfo(poolId, address(this), fullLower, fullUpper, bytes32(0));
         (uint256 g0, uint256 g1) = poolManager.getFeeGrowthInside(poolId, fullLower, fullUpper);
@@ -305,6 +366,8 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
             f1 = FullMath.mulDiv(g1 - last1, l, Q128);
         }
     }
+
+    // ------------------------------------------------------------------ hook callbacks
 
     function _beforeInitialize(address, PoolKey calldata key, uint160 sqrtPriceX96) internal override returns (bytes4) {
         if (bound) revert AlreadyBound();
@@ -325,12 +388,12 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        (uint160 sqrtP,,,) = poolManager.getSlot0(poolId);
+        uint160 sqrtP = _spot();
         if (lastSwapBlock != block.number) {
             lastSwapBlock = uint64(block.number);
             blockStartSqrt = sqrtP;
         }
-        if (passiveLiquidity + leasedUnits != 0) {
+        if (_book.passiveLiquidity + _book.leasedUnits != 0) {
             (uint256 fg0, uint256 fg1) = poolManager.getFeeGrowthGlobals(poolId);
             uint256 t0 = T_FG0;
             uint256 t1 = T_FG1;
@@ -350,7 +413,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         override
         returns (bytes4, int128)
     {
-        if (passiveLiquidity + leasedUnits != 0) _accruePassive(params.zeroForOne, delta);
+        if (_book.passiveLiquidity + _book.leasedUnits != 0) _accruePassive(params.zeroForOne, delta);
         return (BaseHook.afterSwap.selector, 0);
     }
 
@@ -370,8 +433,10 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         }
         if (dfg == 0) return;
 
+        uint128 passive = _book.passiveLiquidity;
+        uint128 leased = _book.leasedUnits;
         uint256 g;
-        if (leasedUnits == 0) {
+        if (leased == 0) {
             // with nothing leased the counterfactual is what actually happened
             g = dfg;
         } else {
@@ -381,33 +446,28 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
             uint16 pf = zeroForOne ? protocolFee.getZeroForOneFee() : protocolFee.getOneForZeroFee();
             uint256 fee = PassiveMath.lpFee(uint128(-paid), baseFee, pf);
             g = PassiveMath.growth(
-                fee,
-                dfg,
-                _managedInRange(uint160(sqrtBefore), sqrtAfter),
-                passiveLiquidity,
-                passiveLiquidity + leasedUnits
+                fee, dfg, _managedInRange(uint160(sqrtBefore), sqrtAfter), passive, uint256(passive) + leased
             );
         }
         unchecked {
-            if (zeroForOne) passiveGrowth0X128 += g;
-            else passiveGrowth1X128 += g;
+            if (zeroForOne) _book.passiveGrowth0X128 += g;
+            else _book.passiveGrowth1X128 += g;
         }
     }
 
     /// @dev Sum over leases of their liquidity weighted by how much of the swap's path fell in range.
-    function _managedInRange(uint160, uint160) internal view virtual returns (uint256) {
-        return 0;
-    }
-
-    /// @notice Spot clamped to the block's opening price, so a price pushed inside the current
-    /// block cannot move a settlement by more than the clamp.
-    function settlementSqrtPrice() public view returns (uint160) {
-        (uint160 spot,,,) = poolManager.getSlot0(poolId);
-        if (lastSwapBlock != block.number) return spot;
-        uint256 lo = uint256(blockStartSqrt) * (10_000 - clampSqrtBps) / 10_000;
-        uint256 hi = uint256(blockStartSqrt) * (10_000 + clampSqrtBps) / 10_000;
-        if (spot < lo) return uint160(lo);
-        if (spot > hi) return uint160(hi);
-        return spot;
+    function _managedInRange(uint160 sqrtBefore, uint160 sqrtAfter) internal view returns (uint256 managed) {
+        for (uint256 slot; slot < maxLeases; ++slot) {
+            Lease storage l = _leases[slot];
+            uint128 liq = l.liquidity;
+            if (liq == 0) continue;
+            uint256 f = PassiveMath.overlap(
+                sqrtBefore,
+                sqrtAfter,
+                TickMath.getSqrtPriceAtTick(l.tickLower),
+                TickMath.getSqrtPriceAtTick(l.tickUpper)
+            );
+            managed += uint256(liq) * f / 1e18;
+        }
     }
 }

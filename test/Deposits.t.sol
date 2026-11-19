@@ -29,7 +29,7 @@ contract DepositsTest is Fixture {
 
     function _churn(uint256 n) internal {
         for (uint256 i; i < n; i++) {
-            vm.roll(block.number + 1);
+            _nextBlock();
             _swapAs(mallory, i % 2 == 0, -20e18);
         }
     }
@@ -134,7 +134,9 @@ contract DepositsTest is Fixture {
         _deposit(mallory, 100e18);
         _swapAs(mallory, false, -500e18);
         _withdraw(mallory, charter.balanceOf(mallory));
-        int256 pnl = _signedValue(int256(currency0.balanceOf(mallory)) - int256(m0), int256(currency1.balanceOf(mallory)) - int256(m1), ref);
+        int256 pnl = _signedValue(
+            int256(currency0.balanceOf(mallory)) - int256(m0), int256(currency1.balanceOf(mallory)) - int256(m1), ref
+        );
         assertLt(pnl, 0, "attacker loses");
 
         (uint256 after0, uint256 after1) = charter.previewWithdraw(aliceShares);
