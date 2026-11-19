@@ -19,12 +19,13 @@ import {Currency} from "v4-core/types/Currency.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
 import {SwapParams} from "v4-core/types/PoolOperation.sol";
-import {Book, Lease, Env} from "./types/CharterTypes.sol";
+import {Book, Lease, Guard, Env} from "./types/CharterTypes.sol";
 import {PassiveMath} from "./libraries/PassiveMath.sol";
 import {Positions} from "./libraries/Positions.sol";
 import {VaultLogic} from "./libraries/VaultLogic.sol";
 import {LeaseLogic} from "./libraries/LeaseLogic.sol";
 import {LeaseMath} from "./libraries/LeaseMath.sol";
+import {RiskLogic} from "./libraries/RiskLogic.sol";
 
 /// @title Charter
 /// @notice Liquidity managers lease depositor capital in one Uniswap v4 pool. Depositors are owed
@@ -89,6 +90,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
 
     Book internal _book;
     mapping(uint256 slot => Lease) internal _leases;
+    mapping(uint256 slot => Guard) internal _guards;
 
     error WrongPool();
     error AlreadyBound();
@@ -221,6 +223,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         if (_leases[slot].manager != msg.sender) revert NotManager();
         _checkRange(tickLower, tickUpper);
         _chargeRent(slot);
+        delete _guards[slot];
         poolManager.unlock(abi.encode(Action.Rebalance, abi.encode(slot, tickLower, tickUpper)));
     }
 
@@ -242,6 +245,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     /// @notice Pay a lease's accrued rent from its bond to depositors. Anyone can call it.
     function collectRent(uint256 slot) external returns (uint256 paid) {
         if (_leases[slot].manager == address(0)) revert NoLease();
+        delete _guards[slot];
         return _chargeRent(slot);
     }
 
@@ -298,6 +302,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
 
     function _open(bytes memory args) internal returns (bytes memory) {
         LeaseLogic.OpenArgs memory a = abi.decode(args, (LeaseLogic.OpenArgs));
+        delete _guards[a.slot];
         uint128 liq = LeaseLogic.open(_book, _leases[a.slot], _env(), a);
         emit LeaseOpened(a.slot, a.manager, a.units, a.rentPips, a.bond, a.tickLower, a.tickUpper, liq);
         return "";
@@ -311,27 +316,27 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     }
 
     function _liquidate(uint256 slot) internal {
-        Lease storage l = _leases[slot];
-        LeaseLogic.Settlement memory s =
-            LeaseLogic.close(_book, l, _env(), slot, settlementSqrtPrice(), _unitsValue(l.units));
-        emit Liquidated(slot, s.manager, s.owedValue, s.heldValue, s.bondUsed, s.uncovered);
+        RiskLogic.liquidate(_book, _leases[slot], _env(), slot, settlementSqrtPrice());
+        delete _guards[slot];
     }
 
-    /// @dev Equity valued at `sqrtP`, so swaps can judge at spot and catch a real crash in the swap
-    /// that causes it. Settlement itself always uses the clamped price.
     function _underwater(uint256 slot, uint160 sqrtP) internal view returns (bool) {
-        Lease storage l = _leases[slot];
-        LeaseMath.Account memory a = LeaseMath.account(_book, l, _env(), slot, sqrtP);
-        int256 equity = LeaseMath.equity(a, l.bond) - int256(rentDue(slot));
-        return equity < int256(a.owedValue * maintenanceBps / 10_000);
+        return RiskLogic.underwater(_book, _leases[slot], _env(), slot, sqrtP, maintenanceBps);
     }
 
     function _checkLeases() internal {
-        uint160 sp = _spot();
-        for (uint256 slot; slot < maxLeases; ++slot) {
-            if (_leases[slot].manager == address(0)) continue;
-            if (_underwater(slot, sp)) _liquidate(slot);
-        }
+        RiskLogic.check(
+            _book,
+            _leases,
+            _guards,
+            _env(),
+            RiskLogic.Params({maxLeases: maxLeases, maintenanceBps: maintenanceBps, settleSqrt: settlementSqrtPrice()})
+        );
+    }
+
+    /// @notice Budgets left by a lease's last full check. Swaps skip the lease while all three hold.
+    function guard(uint256 slot) external view returns (Guard memory) {
+        return _guards[slot];
     }
 
     function _checkRange(int24 lo, int24 hi) internal view {

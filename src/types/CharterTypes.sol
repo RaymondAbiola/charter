@@ -39,6 +39,18 @@ struct Lease {
     uint256 rentCarry;
 }
 
+/// @dev Budgets from a lease's last full check. While the tick stays in [lo, hi), the time is at
+/// or before validUntil and owed fees since the check stay under feeBudget, the lease cannot have
+/// reached its maintenance margin, so swaps skip its full valuation.
+struct Guard {
+    int24 lo;
+    int24 hi;
+    uint64 validUntil;
+    uint128 feeBudget;
+    uint256 growth0At;
+    uint256 growth1At;
+}
+
 struct Env {
     IPoolManager pm;
     PoolKey key;
