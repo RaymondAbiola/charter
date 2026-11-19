@@ -11,8 +11,10 @@ import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {Book, Lease, Env} from "../types/CharterTypes.sol";
 import {Positions} from "./Positions.sol";
 
-/// @notice What a lease owes depositors and what it holds. Token amounts are taken at spot and
-/// valued in token1 at the settlement price the caller passes in.
+/// @notice What a lease owes depositors and what it holds, valued in token1 at the price the
+/// caller passes in. What is held is real inventory, so it is read at spot. What is owed is a
+/// passive position, so its token mix is taken at the valuation price itself: a pushed spot would
+/// otherwise tilt the mix and inflate the debt.
 library LeaseMath {
     using StateLibrary for IPoolManager;
     using PoolIdLibrary for PoolKey;
@@ -33,20 +35,19 @@ library LeaseMath {
         view
         returns (Account memory a)
     {
-        uint160 sp = Positions.spot(env);
-        (a.owed0, a.owed1) = owed(b, l, env, sp);
-        (a.held0, a.held1) = held(l, env, slot, sp);
+        (a.owed0, a.owed1) = owed(b, l, env, sqrtV);
+        (a.held0, a.held1) = held(l, env, slot, Positions.spot(env));
         a.owedValue = Positions.valueAt(a.owed0, a.owed1, sqrtV);
         a.heldValue = Positions.valueAt(a.held0, a.held1, sqrtV);
     }
 
-    /// @dev The leased units at full range plus their passive fees since the lease opened. Rounds up.
-    function owed(Book storage b, Lease storage l, Env memory env, uint160 sp)
+    /// @dev The leased units at full range at `sqrtP`, plus their passive fees since the lease opened. Rounds up.
+    function owed(Book storage b, Lease storage l, Env memory env, uint160 sqrtP)
         internal
         view
         returns (uint256 a0, uint256 a1)
     {
-        (a0, a1) = Positions.fullRangeAmounts(env, sp, l.units, true);
+        (a0, a1) = Positions.fullRangeAmounts(env, sqrtP, l.units, true);
         unchecked {
             a0 += FullMath.mulDivRoundingUp(b.passiveGrowth0X128 - l.growth0Start, l.units, Q128);
             a1 += FullMath.mulDivRoundingUp(b.passiveGrowth1X128 - l.growth1Start, l.units, Q128);

@@ -5,9 +5,11 @@ import {CurrencySettler} from "@uniswap/hooks/utils/CurrencySettler.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
+import {FullMath} from "v4-core/libraries/FullMath.sol";
 import {LiquidityAmounts} from "v4-periphery/libraries/LiquidityAmounts.sol";
 import {Book, Lease, Env} from "../types/CharterTypes.sol";
 import {Positions} from "./Positions.sol";
+import {LeaseMath} from "./LeaseMath.sol";
 
 /// @notice Lease lifecycle. Runs by delegatecall, so the hook stays the owner of every position.
 library LeaseLogic {
@@ -16,6 +18,17 @@ library LeaseLogic {
     error RangeTooThin();
 
     uint256 internal constant YEAR = 365 days;
+
+    /// @dev How a closed lease was split. Values in token1 at the settlement price.
+    struct Settlement {
+        address manager;
+        uint256 owedValue;
+        uint256 heldValue;
+        uint256 bondUsed;
+        uint256 uncovered;
+        uint256 toManager0;
+        uint256 toManager1;
+    }
 
     struct OpenArgs {
         address manager;
@@ -66,6 +79,10 @@ library LeaseLogic {
     /// claims the hook already holds, so this is bookkeeping only.
     /// @dev The remainder is carried exactly, so neither rounding nor a short bond loses rent.
     function chargeRent(Book storage b, Lease storage l, uint256 value) external returns (uint256 paid) {
+        return _chargeRent(b, l, value);
+    }
+
+    function _chargeRent(Book storage b, Lease storage l, uint256 value) internal returns (uint256 paid) {
         uint256 total = _rentScaled(l, value);
         l.rentPaidAt = uint64(block.timestamp);
         uint256 due = total / (1e6 * YEAR);
@@ -76,6 +93,82 @@ library LeaseLogic {
         l.bond = bond - paid;
         b.totalBond -= paid;
         b.idle1 += paid;
+    }
+
+    /// @notice Ends a lease: collects rent, pulls its liquidity and settles it against what it owes.
+    /// Liquidity is only removed here, never re-added, so a forced close cannot be sandwiched.
+    /// @param sqrtV settlement price, clamped to the block's opening price
+    /// @param value the leased units' value at that price, for rent
+    function close(Book storage b, Lease storage l, Env memory env, uint256 slot, uint160 sqrtV, uint256 value)
+        external
+        returns (Settlement memory s)
+    {
+        _chargeRent(b, l, value);
+        _exit(b, l, env, slot);
+        s.manager = l.manager;
+
+        (uint256 o0, uint256 o1) = LeaseMath.owed(b, l, env, sqrtV);
+        s.owedValue = Positions.valueAt(o0, o1, sqrtV) + rentDue(l, value);
+        uint256 h0 = l.held0;
+        uint256 h1 = l.held1;
+        s.heldValue = Positions.valueAt(h0, h1, sqrtV);
+
+        uint256 bond = l.bond;
+        uint256 toDepositors0 = h0;
+        uint256 toDepositors1 = h1;
+        if (s.heldValue > s.owedValue) {
+            // depositors take a slice of each token worth what they are owed, the manager keeps the rest
+            toDepositors0 = FullMath.mulDivRoundingUp(h0, s.owedValue, s.heldValue);
+            toDepositors1 = FullMath.mulDivRoundingUp(h1, s.owedValue, s.heldValue);
+            if (toDepositors0 > h0) toDepositors0 = h0;
+            if (toDepositors1 > h1) toDepositors1 = h1;
+        } else {
+            uint256 gap = s.owedValue - s.heldValue;
+            s.bondUsed = gap < bond ? gap : bond;
+            s.uncovered = gap - s.bondUsed;
+        }
+        s.toManager0 = h0 - toDepositors0;
+        s.toManager1 = h1 - toDepositors1 + (bond - s.bondUsed);
+
+        b.totalHeld0 -= h0;
+        b.totalHeld1 -= h1;
+        b.totalBond -= bond;
+        b.idle0 += toDepositors0;
+        b.idle1 += toDepositors1 + s.bondUsed;
+        b.leasedUnits -= l.units;
+        b.uncovered += s.uncovered;
+        if (s.toManager0 > 0) env.pm.transfer(s.manager, env.key.currency0.toId(), s.toManager0);
+        if (s.toManager1 > 0) env.pm.transfer(s.manager, env.key.currency1.toId(), s.toManager1);
+        delete l.manager;
+        delete l.rentPips;
+        delete l.openedAt;
+        delete l.tickLower;
+        delete l.tickUpper;
+        delete l.rentPaidAt;
+        delete l.units;
+        delete l.growth0Start;
+        delete l.growth1Start;
+        delete l.bond;
+        delete l.held0;
+        delete l.held1;
+        delete l.rentCarry;
+    }
+
+    /// @notice Puts idle depositor tokens back into the passive full-range position.
+    function repassivate(Book storage b, Env memory env) external returns (uint128 liq) {
+        Positions.collectPassive(b, env);
+        liq = LiquidityAmounts.getLiquidityForAmounts(
+            Positions.spot(env),
+            TickMath.getSqrtPriceAtTick(env.fullLower),
+            TickMath.getSqrtPriceAtTick(env.fullUpper),
+            b.idle0,
+            b.idle1
+        );
+        liq = uint128(uint256(liq) * 999_999 / 1_000_000);
+        if (liq == 0) return 0;
+        (uint256 owe0, uint256 owe1) = Positions.owed(Positions.modifyPassive(env, int256(uint256(liq))));
+        Positions.fromIdle(b, env, owe0, owe1);
+        b.passiveLiquidity += liq;
     }
 
     function rebalance(Book storage b, Lease storage l, Env memory env, uint256 slot, int24 lo, int24 hi)

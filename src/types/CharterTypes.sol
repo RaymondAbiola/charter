@@ -16,6 +16,8 @@ struct Book {
     uint256 totalBond;
     uint256 passiveGrowth0X128;
     uint256 passiveGrowth1X128;
+    // value (token1) depositors were owed on closed leases that neither the lease nor its bond covered
+    uint256 uncovered;
 }
 
 /// @dev The first word after the manager word (liquidity and ticks) is all the swap path reads.
