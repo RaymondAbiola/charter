@@ -18,6 +18,19 @@ struct Book {
     uint256 passiveGrowth1X128;
     // value (token1) depositors were owed on closed leases that neither the lease nor its bond covered
     uint256 uncovered;
+    // token1 claims escrowed by pending bids
+    uint256 totalEscrow;
+}
+
+/// @dev A pending takeover of an occupied slot. Its bond is escrowed until it activates or is outbid.
+struct Bid {
+    address bidder;
+    uint32 rentPips;
+    uint64 readyAt;
+    uint128 units;
+    int24 tickLower;
+    int24 tickUpper;
+    uint256 bond;
 }
 
 /// @dev The first word after the manager word (liquidity and ticks) is all the swap path reads.

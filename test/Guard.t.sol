@@ -129,6 +129,9 @@ contract GuardTest is Fixture {
     function test_armedSwapsAreCheap() public {
         _open(300e18, 1, 600);
         _arm();
+        // a first swap in each direction pays for writing that side's counter, so warm both up
+        _nextBlock();
+        _swapAs(mallory, false, -1e15);
         _nextBlock();
         _warp(12);
         uint256 gas = gasleft();

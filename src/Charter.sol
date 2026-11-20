@@ -19,7 +19,7 @@ import {Currency} from "v4-core/types/Currency.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
 import {SwapParams} from "v4-core/types/PoolOperation.sol";
-import {Book, Lease, Guard, Env} from "./types/CharterTypes.sol";
+import {Book, Lease, Guard, Bid, Env} from "./types/CharterTypes.sol";
 import {PassiveMath} from "./libraries/PassiveMath.sol";
 import {Positions} from "./libraries/Positions.sol";
 import {VaultLogic} from "./libraries/VaultLogic.sol";
@@ -49,7 +49,9 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         Rebalance,
         Liquidate,
         Repassivate,
-        Exit
+        Exit,
+        Bid,
+        Activate
     }
 
     struct Config {
@@ -61,6 +63,8 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         uint8 maxLeases;
         uint16 minBondBps;
         uint16 maintenanceBps;
+        uint32 auctionDelay;
+        uint16 minRaiseBps;
     }
 
     uint256 internal constant Q128 = 1 << 128;
@@ -80,6 +84,8 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     uint8 public immutable maxLeases;
     uint16 public immutable minBondBps;
     uint16 public immutable maintenanceBps;
+    uint32 public immutable auctionDelay;
+    uint16 public immutable minRaiseBps;
     int24 public immutable fullLower;
     int24 public immutable fullUpper;
 
@@ -93,6 +99,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     Book internal _book;
     mapping(uint256 slot => Lease) internal _leases;
     mapping(uint256 slot => Guard) internal _guards;
+    mapping(uint256 slot => Bid) internal _bids;
 
     error WrongPool();
     error AlreadyBound();
@@ -110,6 +117,8 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     error NoLease();
     error Healthy();
     error NotReady();
+    error BidTooLow();
+    error NoBid();
 
     event Bound(PoolId indexed id, uint160 sqrtPriceX96);
     event Deposit(address indexed payer, address indexed to, uint256 shares, uint256 amount0, uint256 amount1);
@@ -135,6 +144,19 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         uint256 uncovered
     );
     event Repassivated(uint128 liquidity);
+    event BidPlaced(
+        uint256 indexed slot,
+        address indexed bidder,
+        uint128 units,
+        uint32 rentPips,
+        uint256 bond,
+        int24 tickLower,
+        int24 tickUpper,
+        uint64 readyAt
+    );
+    event BidRefunded(uint256 indexed slot, address indexed bidder, uint256 bond);
+    event BidVoided(uint256 indexed slot, address indexed bidder);
+    event TakenOver(uint256 indexed slot, address indexed from, address indexed to);
     event LeaseEnded(
         uint256 indexed slot,
         address indexed manager,
@@ -158,6 +180,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         }
         // the bond must leave room above the maintenance margin
         if (cfg.maintenanceBps == 0 || cfg.maintenanceBps >= cfg.minBondBps) revert BadConfig();
+        if (cfg.minRaiseBps == 0) revert BadConfig();
         currency0 = cfg.currency0;
         currency1 = cfg.currency1;
         tickSpacing = cfg.tickSpacing;
@@ -166,6 +189,8 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         maxLeases = cfg.maxLeases;
         minBondBps = cfg.minBondBps;
         maintenanceBps = cfg.maintenanceBps;
+        auctionDelay = cfg.auctionDelay;
+        minRaiseBps = cfg.minRaiseBps;
         fullLower = TickMath.minUsableTick(cfg.tickSpacing);
         fullUpper = TickMath.maxUsableTick(cfg.tickSpacing);
     }
@@ -215,35 +240,38 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     {
         if (!bound) revert NotBound();
         if (slot >= maxLeases) revert BadSlot();
-        if (_leases[slot].manager != address(0)) revert SlotTaken();
-        if (units == 0 || units > _book.passiveLiquidity) revert NotEnoughCapital();
-        _checkRange(tickLower, tickUpper);
-        if (bond < minBond(units)) revert BondTooSmall();
-        LeaseLogic.OpenArgs memory a = LeaseLogic.OpenArgs({
-            manager: msg.sender,
-            slot: slot,
-            units: units,
-            rentPips: rentPips,
-            bond: bond,
-            tickLower: tickLower,
-            tickUpper: tickUpper
-        });
-        poolManager.unlock(abi.encode(Action.Open, abi.encode(a)));
+        _unlock(Action.Open, abi.encode(_order(slot, units, rentPips, bond, tickLower, tickUpper)));
     }
 
     function rebalance(uint256 slot, int24 tickLower, int24 tickUpper) external {
         if (_leases[slot].manager != msg.sender) revert NotManager();
-        _checkRange(tickLower, tickUpper);
-        _chargeRent(slot);
-        delete _guards[slot];
-        poolManager.unlock(abi.encode(Action.Rebalance, abi.encode(slot, tickLower, tickUpper)));
+        _unlock(Action.Rebalance, abi.encode(slot, tickLower, tickUpper));
+    }
+
+    /// @notice Bid to take over an occupied slot. Rent must beat both the current lease and any
+    /// pending bid by `minRaiseBps`. The bond is escrowed now; an outbid bidder is refunded.
+    /// After `auctionDelay`, anyone can activate the takeover.
+    function bid(uint256 slot, uint128 units, uint32 rentPips, uint256 bond, int24 tickLower, int24 tickUpper)
+        external
+    {
+        if (slot >= maxLeases) revert BadSlot();
+        _unlock(Action.Bid, abi.encode(_order(slot, units, rentPips, bond, tickLower, tickUpper)));
+    }
+
+    /// @notice Hand a slot to its pending bid once the delay has passed. Never in a block that
+    /// already saw a swap, so the hand-over price cannot have been pushed. Anyone can call it.
+    function activate(uint256 slot) external {
+        Bid storage b = _bids[slot];
+        if (b.bidder == address(0)) revert NoBid();
+        if (block.timestamp < b.readyAt || lastSwapBlock == block.number) revert NotReady();
+        _unlock(Action.Activate, abi.encode(slot));
     }
 
     /// @notice End your lease. It settles like a liquidation: rent first, liquidity pulled, then
     /// depositors take what they are owed at the clamped price and you keep the rest.
     function exitLease(uint256 slot) external {
         if (_leases[slot].manager != msg.sender) revert NotManager();
-        poolManager.unlock(abi.encode(Action.Exit, abi.encode(slot)));
+        _unlock(Action.Exit, abi.encode(slot));
     }
 
     /// @notice Close a lease whose equity is below the maintenance margin. Swaps already do this;
@@ -251,50 +279,75 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     function liquidate(uint256 slot) external {
         if (_leases[slot].manager == address(0)) revert NoLease();
         if (!_underwater(slot, _spot())) revert Healthy();
-        poolManager.unlock(abi.encode(Action.Liquidate, abi.encode(slot)));
+        _unlock(Action.Liquidate, abi.encode(slot));
     }
 
     /// @notice Put idle depositor tokens back to full range. Never in a block that already saw a
     /// swap, so the price it adds at cannot have been pushed in the same block.
     function repassivate() external {
         if (!bound || lastSwapBlock == block.number) revert NotReady();
-        poolManager.unlock(abi.encode(Action.Repassivate, ""));
+        _unlock(Action.Repassivate, "");
     }
 
     /// @notice Pay a lease's accrued rent from its bond to depositors. Anyone can call it.
-    function collectRent(uint256 slot) external returns (uint256 paid) {
-        if (_leases[slot].manager == address(0)) revert NoLease();
-        delete _guards[slot];
-        return _chargeRent(slot);
+    function collectRent(uint256 slot) external returns (uint256) {
+        return LeaseLogic.chargeRent(_book, _leases[slot], _guards[slot], _env(), slot, settlementSqrtPrice());
     }
 
-    function _chargeRent(uint256 slot) internal returns (uint256 paid) {
-        Lease storage l = _leases[slot];
-        paid = LeaseLogic.chargeRent(_book, l, _unitsValue(l.units));
-        if (paid > 0) emit RentPaid(slot, paid);
+    function _order(uint256 slot, uint128 units, uint32 rentPips, uint256 bond, int24 lo, int24 hi)
+        internal
+        view
+        returns (LeaseLogic.Order memory)
+    {
+        return LeaseLogic.Order({
+            manager: msg.sender,
+            slot: slot,
+            units: units,
+            rentPips: rentPips,
+            bond: bond,
+            tickLower: lo,
+            tickUpper: hi,
+            fromEscrow: false
+        });
     }
 
-    /// @dev token1 value of `units` at full range at the settlement price.
-    function _unitsValue(uint128 units) internal view returns (uint256) {
-        return ViewLogic.unitsValue(_env(), units, settlementSqrtPrice());
+    function _rules() internal view returns (LeaseLogic.Rules memory) {
+        return LeaseLogic.Rules({
+            settleSqrt: settlementSqrtPrice(),
+            minBondBps: minBondBps,
+            minRaiseBps: minRaiseBps,
+            auctionDelay: auctionDelay
+        });
+    }
+
+    function _unlock(Action action, bytes memory args) internal returns (bytes memory) {
+        return poolManager.unlock(abi.encode(action, args));
     }
 
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
         (Action action, bytes memory args) = abi.decode(data, (Action, bytes));
         if (action == Action.Deposit) return _deposit(args);
         if (action == Action.Withdraw) return _withdraw(args);
-        if (action == Action.Open) return _open(args);
-        if (action == Action.Rebalance) return _rebalance(args);
-        if (action == Action.Liquidate) {
-            _liquidate(abi.decode(args, (uint256)));
-            return "";
+        if (action == Action.Open || action == Action.Bid) {
+            LeaseLogic.Order memory o = abi.decode(args, (LeaseLogic.Order));
+            if (action == Action.Open) LeaseLogic.open(_book, _leases[o.slot], _guards[o.slot], _env(), _rules(), o);
+            else LeaseLogic.bid(_book, _leases[o.slot], _bids[o.slot], _env(), _rules(), o);
+        } else if (action == Action.Rebalance) {
+            (uint256 slot, int24 lo, int24 hi) = abi.decode(args, (uint256, int24, int24));
+            LeaseLogic.rebalance(_book, _leases[slot], _guards[slot], _env(), _rules(), slot, lo, hi);
+        } else if (action == Action.Repassivate) {
+            LeaseLogic.repassivate(_book, _env());
+        } else {
+            uint256 slot = abi.decode(args, (uint256));
+            if (action == Action.Liquidate) {
+                RiskLogic.liquidate(_book, _leases[slot], _env(), slot, settlementSqrtPrice());
+                delete _guards[slot];
+            } else if (action == Action.Exit) {
+                LeaseLogic.exit(_book, _leases[slot], _guards[slot], _env(), slot, settlementSqrtPrice());
+            } else {
+                LeaseLogic.activate(_book, _leases[slot], _bids[slot], _guards[slot], _env(), _rules(), slot);
+            }
         }
-        if (action == Action.Exit) {
-            _exit(abi.decode(args, (uint256)));
-            return "";
-        }
-        uint128 liq = LeaseLogic.repassivate(_book, _env());
-        emit Repassivated(liq);
         return "";
     }
 
@@ -321,36 +374,6 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         return abi.encode(out0, out1);
     }
 
-    function _open(bytes memory args) internal returns (bytes memory) {
-        LeaseLogic.OpenArgs memory a = abi.decode(args, (LeaseLogic.OpenArgs));
-        delete _guards[a.slot];
-        uint128 liq = LeaseLogic.open(_book, _leases[a.slot], _env(), a);
-        emit LeaseOpened(a.slot, a.manager, a.units, a.rentPips, a.bond, a.tickLower, a.tickUpper, liq);
-        return "";
-    }
-
-    function _rebalance(bytes memory args) internal returns (bytes memory) {
-        (uint256 slot, int24 lo, int24 hi) = abi.decode(args, (uint256, int24, int24));
-        uint128 liq = LeaseLogic.rebalance(_book, _leases[slot], _env(), slot, lo, hi);
-        emit Rebalanced(slot, lo, hi, liq);
-        return "";
-    }
-
-    function _liquidate(uint256 slot) internal {
-        RiskLogic.liquidate(_book, _leases[slot], _env(), slot, settlementSqrtPrice());
-        delete _guards[slot];
-    }
-
-    function _exit(uint256 slot) internal {
-        Lease storage l = _leases[slot];
-        uint160 s = settlementSqrtPrice();
-        LeaseLogic.Settlement memory st = LeaseLogic.close(_book, l, _env(), slot, s, _unitsValue(l.units));
-        delete _guards[slot];
-        emit LeaseEnded(
-            slot, st.manager, st.owedValue, st.heldValue, st.bondUsed, st.uncovered, st.toManager0, st.toManager1
-        );
-    }
-
     function _underwater(uint256 slot, uint160 sqrtP) internal view returns (bool) {
         return RiskLogic.underwater(_book, _leases[slot], _env(), slot, sqrtP, maintenanceBps);
     }
@@ -368,12 +391,6 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     /// @notice Budgets left by a lease's last full check. Swaps skip the lease while all three hold.
     function guard(uint256 slot) external view returns (Guard memory) {
         return _guards[slot];
-    }
-
-    function _checkRange(int24 lo, int24 hi) internal view {
-        if (lo >= hi || lo < fullLower || hi > fullUpper || lo % tickSpacing != 0 || hi % tickSpacing != 0) {
-            revert BadRange();
-        }
     }
 
     function _env() internal view returns (Env memory) {
@@ -427,6 +444,14 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
 
     function passiveGrowth1X128() external view returns (uint256) {
         return _book.passiveGrowth1X128;
+    }
+
+    function totalEscrow() external view returns (uint256) {
+        return _book.totalEscrow;
+    }
+
+    function pendingBid(uint256 slot) external view returns (Bid memory) {
+        return _bids[slot];
     }
 
     function lease(uint256 slot) external view returns (Lease memory) {

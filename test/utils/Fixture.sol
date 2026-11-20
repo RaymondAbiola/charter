@@ -25,6 +25,8 @@ abstract contract Fixture is Test, Deployers {
     uint8 constant MAX_LEASES = 4;
     uint16 constant MIN_BOND_BPS = 500;
     uint16 constant MAINTENANCE_BPS = 100;
+    uint32 constant AUCTION_DELAY = 5 minutes;
+    uint16 constant MIN_RAISE_BPS = 500;
 
     Charter charter;
     int24 FL;
@@ -58,7 +60,9 @@ abstract contract Fixture is Test, Deployers {
             clampSqrtBps: CLAMP_SQRT_BPS,
             maxLeases: MAX_LEASES,
             minBondBps: MIN_BOND_BPS,
-            maintenanceBps: MAINTENANCE_BPS
+            maintenanceBps: MAINTENANCE_BPS,
+            auctionDelay: AUCTION_DELAY,
+            minRaiseBps: MIN_RAISE_BPS
         });
     }
 
