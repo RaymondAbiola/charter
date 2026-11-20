@@ -26,6 +26,7 @@ import {VaultLogic} from "./libraries/VaultLogic.sol";
 import {LeaseLogic} from "./libraries/LeaseLogic.sol";
 import {LeaseMath} from "./libraries/LeaseMath.sol";
 import {RiskLogic} from "./libraries/RiskLogic.sol";
+import {ViewLogic} from "./libraries/ViewLogic.sol";
 
 /// @title Charter
 /// @notice Liquidity managers lease depositor capital in one Uniswap v4 pool. Depositors are owed
@@ -275,9 +276,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
 
     /// @dev token1 value of `units` at full range at the settlement price.
     function _unitsValue(uint128 units) internal view returns (uint256) {
-        uint160 s = settlementSqrtPrice();
-        (uint256 a0, uint256 a1) = Positions.fullRangeAmounts(_env(), s, units, false);
-        return Positions.valueAt(a0, a1, s);
+        return ViewLogic.unitsValue(_env(), units, settlementSqrtPrice());
     }
 
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
@@ -437,58 +436,35 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     /// @notice A lease's books at the settlement price: what it owes depositors, what it holds,
     /// and the equity left once its bond and unpaid rent are counted. Values are in token1.
     function leaseAccount(uint256 slot)
-        public
+        external
         view
         returns (LeaseMath.Account memory a, uint256 bond, uint256 rent, int256 equity)
     {
-        Lease storage l = _leases[slot];
-        if (l.manager == address(0)) return (a, 0, 0, 0);
-        a = LeaseMath.account(_book, l, _env(), slot, settlementSqrtPrice());
-        bond = l.bond;
-        rent = rentDue(slot);
-        equity = LeaseMath.equity(a, bond) - int256(rent);
+        return ViewLogic.leaseAccount(_book, _leases[slot], _env(), slot, settlementSqrtPrice());
     }
 
     /// @notice Rent a lease has accrued and not yet paid, in token1.
-    function rentDue(uint256 slot) public view returns (uint256) {
-        Lease storage l = _leases[slot];
-        if (l.manager == address(0)) return 0;
-        return LeaseLogic.rentDue(l, _unitsValue(l.units));
+    function rentDue(uint256 slot) external view returns (uint256) {
+        return ViewLogic.rentDue(_leases[slot], _env(), settlementSqrtPrice());
     }
 
     /// @notice What depositors collectively own right now: full-range liquidity units plus idle tokens,
     /// counting fees the passive position has earned but not yet collected.
-    function bundle() public view returns (uint128 liquidity, uint256 amount0, uint256 amount1) {
-        (uint256 f0, uint256 f1) = _pendingPassiveFees();
-        return (_book.passiveLiquidity, _book.idle0 + f0, _book.idle1 + f1);
+    function bundle() external view returns (uint128 liquidity, uint256 amount0, uint256 amount1) {
+        return ViewLogic.bundle(_book, _env());
     }
 
     function previewDeposit(uint256 shares) external view returns (uint256 amount0, uint256 amount1) {
-        uint256 supply = totalSupply();
-        (uint128 l, uint256 b0, uint256 b1) = bundle();
-        uint128 dl = supply == 0 ? shares.toUint128() : FullMath.mulDivRoundingUp(l, shares, supply).toUint128();
-        (amount0, amount1) = Positions.fullRangeAmounts(_env(), _spot(), dl, true);
-        if (supply != 0) {
-            amount0 += FullMath.mulDivRoundingUp(b0, shares, supply);
-            amount1 += FullMath.mulDivRoundingUp(b1, shares, supply);
-        }
+        return ViewLogic.previewDeposit(_book, _env(), shares, totalSupply());
     }
 
     function previewWithdraw(uint256 shares) external view returns (uint256 amount0, uint256 amount1) {
-        uint256 supply = totalSupply();
-        if (supply == 0) return (0, 0);
-        (uint128 l, uint256 b0, uint256 b1) = bundle();
-        (amount0, amount1) =
-            Positions.fullRangeAmounts(_env(), _spot(), FullMath.mulDiv(l, shares, supply).toUint128(), false);
-        amount0 += FullMath.mulDiv(b0, shares, supply);
-        amount1 += FullMath.mulDiv(b1, shares, supply);
+        return ViewLogic.previewWithdraw(_book, _env(), shares, totalSupply());
     }
 
     /// @notice Smallest bond for leasing `units`: `minBondBps` of their full-range value at the settlement price.
     function minBond(uint128 units) public view returns (uint256) {
-        uint160 s = settlementSqrtPrice();
-        (uint256 a0, uint256 a1) = Positions.fullRangeAmounts(_env(), s, units, true);
-        return FullMath.mulDivRoundingUp(Positions.valueAt(a0, a1, s), minBondBps, 10_000);
+        return ViewLogic.minBond(_env(), units, settlementSqrtPrice(), minBondBps);
     }
 
     /// @notice Spot clamped to the block's opening price, so a price pushed inside the current
@@ -505,17 +481,6 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
 
     function _spot() internal view returns (uint160 sqrtP) {
         (sqrtP,,,) = poolManager.getSlot0(poolId);
-    }
-
-    function _pendingPassiveFees() internal view returns (uint256 f0, uint256 f1) {
-        if (_book.passiveLiquidity == 0) return (0, 0);
-        (uint128 l, uint256 last0, uint256 last1) =
-            poolManager.getPositionInfo(poolId, address(this), fullLower, fullUpper, bytes32(0));
-        (uint256 g0, uint256 g1) = poolManager.getFeeGrowthInside(poolId, fullLower, fullUpper);
-        unchecked {
-            f0 = FullMath.mulDiv(g0 - last0, l, Q128);
-            f1 = FullMath.mulDiv(g1 - last1, l, Q128);
-        }
     }
 
     // ------------------------------------------------------------------ hook callbacks
