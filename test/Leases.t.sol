@@ -112,13 +112,12 @@ contract LeasesTest is Fixture {
         _ledger();
     }
 
-    function test_depositsPausedWhileLeased() public {
+    function test_depositsStayOpenWhileLeased() public {
         _open(bob, 0, 300e18, -600, 600);
         vm.prank(carol);
-        vm.expectRevert(Charter.LeasesActive.selector);
         charter.deposit(1e18, type(uint256).max, type(uint256).max, carol);
+        assertEq(charter.balanceOf(carol), 1e18);
         vm.prank(alice);
-        vm.expectRevert(Charter.LeasesActive.selector);
         charter.withdraw(1e18, 0, 0, alice);
     }
 

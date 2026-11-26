@@ -16,13 +16,22 @@ library VaultLogic {
     using SafeCast for uint256;
 
     error ZeroShares();
+    error NotEnoughPassive();
 
+    /// @param r0 fee debt leases still owe depositors in token0
+    /// @param r1 fee debt leases still owe depositors in token1
     /// @return amount0 pulled from the payer
     /// @return amount1 pulled from the payer
-    function deposit(Book storage b, Env memory env, address payer, uint256 shares, uint256 supply, uint256 minFirst)
-        external
-        returns (uint256 amount0, uint256 amount1)
-    {
+    function deposit(
+        Book storage b,
+        Env memory env,
+        address payer,
+        uint256 shares,
+        uint256 supply,
+        uint256 minFirst,
+        uint256 r0,
+        uint256 r1
+    ) external returns (uint256 amount0, uint256 amount1) {
         Positions.collectPassive(b, env);
 
         uint128 dl;
@@ -32,9 +41,11 @@ library VaultLogic {
             if (shares <= minFirst) revert ZeroShares();
             dl = shares.toUint128();
         } else {
-            dl = FullMath.mulDivRoundingUp(b.passiveLiquidity, shares, supply).toUint128();
-            extra0 = FullMath.mulDivRoundingUp(b.idle0, shares, supply);
-            extra1 = FullMath.mulDivRoundingUp(b.idle1, shares, supply);
+            // leased units are owed back as full-range units, so a newcomer buys into them as passive
+            uint256 units = uint256(b.passiveLiquidity) + b.leasedUnits;
+            dl = FullMath.mulDivRoundingUp(units, shares, supply).toUint128();
+            extra0 = FullMath.mulDivRoundingUp(b.idle0 + r0, shares, supply);
+            extra1 = FullMath.mulDivRoundingUp(b.idle1 + r1, shares, supply);
         }
 
         (uint256 owe0, uint256 owe1) = Positions.owed(Positions.modifyPassive(env, int256(uint256(dl))));
@@ -46,23 +57,40 @@ library VaultLogic {
         b.passiveLiquidity += dl;
     }
 
-    /// @dev Call after burning the shares, passing the supply from before the burn.
-    function withdraw(Book storage b, Env memory env, address to, uint256 shares, uint256 supply)
-        external
-        returns (uint256 out0, uint256 out1)
-    {
+    /// @dev Call after burning the shares, passing the supply from before the burn. The share of
+    /// what leases still owe is paid from idle; where idle is short, the same value comes out of
+    /// the passive position at the settlement price. Leased capital itself cannot leave yet.
+    function withdraw(
+        Book storage b,
+        Env memory env,
+        address to,
+        uint256 shares,
+        uint256 supply,
+        uint256 r0,
+        uint256 r1,
+        uint160 settleSqrt
+    ) external returns (uint256 out0, uint256 out1) {
         Positions.collectPassive(b, env);
 
-        uint128 dl = FullMath.mulDiv(b.passiveLiquidity, shares, supply).toUint128();
-        out0 = FullMath.mulDiv(b.idle0, shares, supply);
-        out1 = FullMath.mulDiv(b.idle1, shares, supply);
+        uint256 units = uint256(b.passiveLiquidity) + b.leasedUnits;
+        uint256 dl = FullMath.mulDiv(units, shares, supply);
+        uint256 want0 = FullMath.mulDiv(b.idle0 + r0, shares, supply);
+        uint256 want1 = FullMath.mulDiv(b.idle1 + r1, shares, supply);
+        out0 = want0 < b.idle0 ? want0 : b.idle0;
+        out1 = want1 < b.idle1 ? want1 : b.idle1;
+        uint256 short = Positions.valueAt(want0 - out0, want1 - out1, settleSqrt);
+        if (short > 0) {
+            (uint256 u0, uint256 u1) = Positions.fullRangeAmounts(env, settleSqrt, 1e18, true);
+            dl += FullMath.mulDiv(short, 1e18, Positions.valueAt(u0, u1, settleSqrt));
+        }
+        if (dl > b.passiveLiquidity) revert NotEnoughPassive();
 
         Positions.fromIdle(b, env, out0, out1);
         if (dl > 0) {
-            BalanceDelta d = Positions.modifyPassive(env, -int256(uint256(dl)));
+            BalanceDelta d = Positions.modifyPassive(env, -int256(dl));
             out0 += uint128(d.amount0());
             out1 += uint128(d.amount1());
-            b.passiveLiquidity -= dl;
+            b.passiveLiquidity -= uint128(dl);
         }
         env.key.currency0.take(env.pm, to, out0, false);
         env.key.currency1.take(env.pm, to, out1, false);

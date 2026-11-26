@@ -107,7 +107,6 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     error BadConfig();
     error ZeroShares();
     error Slippage();
-    error LeasesActive();
     error BadSlot();
     error SlotTaken();
     error NotManager();
@@ -210,7 +209,6 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     {
         if (!bound) revert NotBound();
         if (shares == 0) revert ZeroShares();
-        if (_book.leasedUnits != 0) revert LeasesActive();
         (amount0, amount1) = abi.decode(
             poolManager.unlock(abi.encode(Action.Deposit, abi.encode(msg.sender, shares, to))), (uint256, uint256)
         );
@@ -223,7 +221,6 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         returns (uint256 amount0, uint256 amount1)
     {
         if (shares == 0) revert ZeroShares();
-        if (_book.leasedUnits != 0) revert LeasesActive();
         (amount0, amount1) = abi.decode(
             poolManager.unlock(abi.encode(Action.Withdraw, abi.encode(msg.sender, shares, to))), (uint256, uint256)
         );
@@ -354,7 +351,9 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     function _deposit(bytes memory args) internal returns (bytes memory) {
         (address payer, uint256 shares, address to) = abi.decode(args, (address, uint256, address));
         uint256 supply = totalSupply();
-        (uint256 amount0, uint256 amount1) = VaultLogic.deposit(_book, _env(), payer, shares, supply, DEAD_SHARES);
+        (uint256 r0, uint256 r1) = _settleLeases();
+        (uint256 amount0, uint256 amount1) =
+            VaultLogic.deposit(_book, _env(), payer, shares, supply, DEAD_SHARES, r0, r1);
         if (supply == 0) {
             _mint(DEAD, DEAD_SHARES);
             _mint(to, shares - DEAD_SHARES);
@@ -369,9 +368,18 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         (address owner, uint256 shares, address to) = abi.decode(args, (address, uint256, address));
         uint256 supply = totalSupply();
         _burn(owner, shares);
-        (uint256 out0, uint256 out1) = VaultLogic.withdraw(_book, _env(), to, shares, supply);
+        (uint256 r0, uint256 r1) = _settleLeases();
+        (uint256 out0, uint256 out1) =
+            VaultLogic.withdraw(_book, _env(), to, shares, supply, r0, r1, settlementSqrtPrice());
         emit Withdraw(owner, to, shares, out0, out1);
         return abi.encode(out0, out1);
+    }
+
+    /// @dev Pays leases' rent and what fee debt they can cover before depositors come or go, and
+    /// returns the fee debt still owed so share maths can count it.
+    function _settleLeases() internal returns (uint256 r0, uint256 r1) {
+        if (_book.leasedUnits == 0) return (0, 0);
+        return LeaseLogic.settleAll(_book, _leases, _env(), maxLeases, settlementSqrtPrice());
     }
 
     function _underwater(uint256 slot, uint160 sqrtP) internal view returns (bool) {
@@ -476,15 +484,16 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     /// @notice What depositors collectively own right now: full-range liquidity units plus idle tokens,
     /// counting fees the passive position has earned but not yet collected.
     function bundle() external view returns (uint128 liquidity, uint256 amount0, uint256 amount1) {
-        return ViewLogic.bundle(_book, _env());
+        return ViewLogic.bundle(_book, _leases, _env(), maxLeases, settlementSqrtPrice());
     }
 
     function previewDeposit(uint256 shares) external view returns (uint256 amount0, uint256 amount1) {
-        return ViewLogic.previewDeposit(_book, _env(), shares, totalSupply());
+        return ViewLogic.previewDeposit(_book, _leases, _env(), maxLeases, settlementSqrtPrice(), shares, totalSupply());
     }
 
     function previewWithdraw(uint256 shares) external view returns (uint256 amount0, uint256 amount1) {
-        return ViewLogic.previewWithdraw(_book, _env(), shares, totalSupply());
+        return
+            ViewLogic.previewWithdraw(_book, _leases, _env(), maxLeases, settlementSqrtPrice(), shares, totalSupply());
     }
 
     /// @notice Smallest bond for leasing `units`: `minBondBps` of their full-range value at the settlement price.

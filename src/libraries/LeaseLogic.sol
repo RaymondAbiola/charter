@@ -17,6 +17,7 @@ library LeaseLogic {
     using CurrencySettler for Currency;
 
     uint256 internal constant YEAR = 365 days;
+    uint256 internal constant Q128 = 1 << 128;
 
     error RangeTooThin();
     error SlotTaken();
@@ -230,6 +231,46 @@ library LeaseLogic {
         _clearBid(pending);
         _open(b, l, env, o);
         emit TakenOver(slot, from, to);
+    }
+
+    /// @notice Before depositors come or go: collect each lease's rent, pull its position fees into
+    /// its loose balance and pay as much of its passive fee debt as that balance covers. Equity
+    /// does not move, because what the lease holds and what it owes drop by the same amount.
+    /// @return r0 fee debt still owed in token0 after paying what could be paid
+    /// @return r1 fee debt still owed in token1
+    function settleAll(
+        Book storage b,
+        mapping(uint256 => Lease) storage leases,
+        Env memory env,
+        uint256 maxLeases,
+        uint160 settleSqrt
+    ) external returns (uint256 r0, uint256 r1) {
+        for (uint256 slot; slot < maxLeases; ++slot) {
+            Lease storage l = leases[slot];
+            if (l.manager == address(0)) continue;
+            _chargeRent(b, l, slot, _unitsValue(env, l.units, settleSqrt));
+            if (l.liquidity > 0) {
+                BalanceDelta d = Positions.modify(env, Positions.leaseSalt(slot), l.tickLower, l.tickUpper, 0);
+                Positions.credit(b, l, env, uint128(d.amount0()), uint128(d.amount1()));
+            }
+            (uint256 o0, uint256 o1) = LeaseMath.feeDebt(b, l);
+            uint256 p0 = o0 < l.held0 ? o0 : l.held0;
+            uint256 p1 = o1 < l.held1 ? o1 : l.held1;
+            // held and idle are both claims the hook already holds, so paying is bookkeeping
+            l.held0 -= p0;
+            l.held1 -= p1;
+            b.totalHeld0 -= p0;
+            b.totalHeld1 -= p1;
+            b.idle0 += p0;
+            b.idle1 += p1;
+            unchecked {
+                l.growth0Start += FullMath.mulDiv(p0, Q128, l.units);
+                l.growth1Start += FullMath.mulDiv(p1, Q128, l.units);
+            }
+            (o0, o1) = LeaseMath.feeDebt(b, l);
+            r0 += o0;
+            r1 += o1;
+        }
     }
 
     /// @notice Puts idle depositor tokens back into the passive full-range position.

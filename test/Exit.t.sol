@@ -30,9 +30,10 @@ contract ExitTest is Fixture {
         return (manager.balanceOf(bob, currency0.toId()), manager.balanceOf(bob, currency1.toId()));
     }
 
+    /// Everything all shares could redeem, valued at `s`. An exit should not change it: before,
+    /// depositors hold a claim worth what the lease owes; after, they hold the payment.
     function _depositorValue(uint160 s) internal view returns (uint256) {
-        (uint128 l, uint256 a0, uint256 a1) = charter.bundle();
-        l;
+        (uint256 a0, uint256 a1) = charter.previewWithdraw(charter.totalSupply());
         return _value(a0, a1, s);
     }
 
@@ -67,7 +68,8 @@ contract ExitTest is Fixture {
         (uint256 c0, uint256 c1) = _bobClaims();
         uint256 toBob = _value(c0 - b0, c1 - b1, s);
         assertApproxEqRel(toBob, uint256(equity), 1e14, "manager leaves with bond plus surplus");
-        assertApproxEqRel(_depositorValue(s) - before, a.owedValue + rent, 1e14, "depositors get what they were owed");
+        assertGt(a.owedValue + rent, 0);
+        assertApproxEqRel(_depositorValue(s), before, 1e14, "depositors were owed exactly what they got");
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
@@ -162,14 +164,13 @@ contract ExitTest is Fixture {
         return v0 + d1;
     }
 
-    function test_depositsResumeOnceLeasesAreGone() public {
+    function test_depositsWorkBeforeAndAfterAnExit() public {
         vm.prank(carol);
-        vm.expectRevert(Charter.LeasesActive.selector);
         charter.deposit(1e18, type(uint256).max, type(uint256).max, carol);
         vm.prank(bob);
         charter.exitLease(0);
         vm.prank(carol);
         charter.deposit(1e18, type(uint256).max, type(uint256).max, carol);
-        assertEq(charter.balanceOf(carol), 1e18);
+        assertEq(charter.balanceOf(carol), 2e18);
     }
 }

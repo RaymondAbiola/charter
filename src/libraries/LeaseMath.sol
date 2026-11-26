@@ -54,6 +54,14 @@ library LeaseMath {
         }
     }
 
+    /// @dev Passive fees the lease owes and has not paid yet, rounded down.
+    function feeDebt(Book storage b, Lease storage l) internal view returns (uint256 a0, uint256 a1) {
+        unchecked {
+            a0 = FullMath.mulDiv(b.passiveGrowth0X128 - l.growth0Start, l.units, Q128);
+            a1 = FullMath.mulDiv(b.passiveGrowth1X128 - l.growth1Start, l.units, Q128);
+        }
+    }
+
     /// @dev The lease's position at spot, its uncollected fees and its loose tokens. Rounds down.
     function held(Lease storage l, Env memory env, uint256 slot, uint160 sp)
         internal

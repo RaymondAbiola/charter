@@ -49,18 +49,41 @@ library ViewLogic {
         return FullMath.mulDivRoundingUp(Positions.valueAt(a0, a1, sv), bps, 10_000);
     }
 
-    function bundle(Book storage b, Env memory env) public view returns (uint128, uint256, uint256) {
-        (uint256 f0, uint256 f1) = _pendingPassiveFees(b, env);
-        return (b.passiveLiquidity, b.idle0 + f0, b.idle1 + f1);
+    /// @notice What depositors own: passive and leased units (a lease owes its units back at full
+    /// range), plus idle tokens, passive fees not yet collected, fee debt leases still owe and rent
+    /// due up to each bond.
+    function bundle(
+        Book storage b,
+        mapping(uint256 => Lease) storage leases,
+        Env memory env,
+        uint256 maxLeases,
+        uint160 sv
+    ) public view returns (uint128 units, uint256 a0, uint256 a1) {
+        (a0, a1) = _pendingPassiveFees(b, env);
+        a0 += b.idle0;
+        a1 += b.idle1;
+        for (uint256 slot; slot < maxLeases; ++slot) {
+            Lease storage l = leases[slot];
+            if (l.manager == address(0)) continue;
+            (uint256 o0, uint256 o1) = LeaseMath.feeDebt(b, l);
+            uint256 rent = LeaseLogic.rentDue(l, unitsValue(env, l.units, sv));
+            a0 += o0;
+            a1 += o1 + (rent < l.bond ? rent : l.bond);
+        }
+        units = b.passiveLiquidity + b.leasedUnits;
     }
 
-    function previewDeposit(Book storage b, Env memory env, uint256 shares, uint256 supply)
-        external
-        view
-        returns (uint256 amount0, uint256 amount1)
-    {
-        (uint128 l, uint256 b0, uint256 b1) = bundle(b, env);
-        uint128 dl = supply == 0 ? shares.toUint128() : FullMath.mulDivRoundingUp(l, shares, supply).toUint128();
+    function previewDeposit(
+        Book storage b,
+        mapping(uint256 => Lease) storage leases,
+        Env memory env,
+        uint256 maxLeases,
+        uint160 sv,
+        uint256 shares,
+        uint256 supply
+    ) external view returns (uint256 amount0, uint256 amount1) {
+        (uint128 u, uint256 b0, uint256 b1) = bundle(b, leases, env, maxLeases, sv);
+        uint128 dl = supply == 0 ? shares.toUint128() : FullMath.mulDivRoundingUp(u, shares, supply).toUint128();
         (amount0, amount1) = Positions.fullRangeAmounts(env, Positions.spot(env), dl, true);
         if (supply != 0) {
             amount0 += FullMath.mulDivRoundingUp(b0, shares, supply);
@@ -68,15 +91,21 @@ library ViewLogic {
         }
     }
 
-    function previewWithdraw(Book storage b, Env memory env, uint256 shares, uint256 supply)
-        external
-        view
-        returns (uint256 amount0, uint256 amount1)
-    {
+    /// @dev Exact while idle covers the share of what leases owe; otherwise part of that share is
+    /// paid as passive liquidity of equal value, so the token split can differ slightly.
+    function previewWithdraw(
+        Book storage b,
+        mapping(uint256 => Lease) storage leases,
+        Env memory env,
+        uint256 maxLeases,
+        uint160 sv,
+        uint256 shares,
+        uint256 supply
+    ) external view returns (uint256 amount0, uint256 amount1) {
         if (supply == 0) return (0, 0);
-        (uint128 l, uint256 b0, uint256 b1) = bundle(b, env);
+        (uint128 u, uint256 b0, uint256 b1) = bundle(b, leases, env, maxLeases, sv);
         (amount0, amount1) =
-            Positions.fullRangeAmounts(env, Positions.spot(env), FullMath.mulDiv(l, shares, supply).toUint128(), false);
+            Positions.fullRangeAmounts(env, Positions.spot(env), FullMath.mulDiv(u, shares, supply).toUint128(), false);
         amount0 += FullMath.mulDiv(b0, shares, supply);
         amount1 += FullMath.mulDiv(b1, shares, supply);
     }
