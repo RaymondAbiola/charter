@@ -255,12 +255,12 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         _unlock(Action.Bid, abi.encode(_order(slot, units, rentPips, bond, tickLower, tickUpper)));
     }
 
-    /// @notice Hand a slot to its pending bid once the delay has passed. Never in a block that
-    /// already saw a swap, so the hand-over price cannot have been pushed. Anyone can call it.
+    /// @notice Hand a slot to its pending bid once the delay has passed. Only while the price sits at
+    /// the block's opening price, so the hand-over price cannot have been pushed. Anyone can call it.
     function activate(uint256 slot) external {
         Bid storage b = _bids[slot];
         if (b.bidder == address(0)) revert NoBid();
-        if (block.timestamp < b.readyAt || lastSwapBlock == block.number) revert NotReady();
+        if (block.timestamp < b.readyAt || !_quiet()) revert NotReady();
         _unlock(Action.Activate, abi.encode(slot));
     }
 
@@ -279,10 +279,10 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         _unlock(Action.Liquidate, abi.encode(slot));
     }
 
-    /// @notice Put idle depositor tokens back to full range. Never in a block that already saw a
-    /// swap, so the price it adds at cannot have been pushed in the same block.
+    /// @notice Put idle depositor tokens back to full range. Only while the price sits at the block's
+    /// opening price, so it cannot add liquidity at a price pushed in the same block.
     function repassivate() external {
-        if (!bound || lastSwapBlock == block.number) revert NotReady();
+        if (!bound || !_quiet()) revert NotReady();
         _unlock(Action.Repassivate, "");
     }
 
@@ -315,6 +315,16 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
             minRaiseBps: minRaiseBps,
             auctionDelay: auctionDelay
         });
+    }
+
+    /// @dev True when no swap this block has moved the price more than a tenth of the clamp from
+    /// where the block opened. A dust swap cannot stall anything; a real push still can.
+    function _quiet() internal view returns (bool) {
+        if (lastSwapBlock != block.number) return true;
+        uint256 open = blockStartSqrt;
+        uint256 spot = _spot();
+        uint256 gap = spot > open ? spot - open : open - spot;
+        return gap * 100_000 <= open * clampSqrtBps;
     }
 
     function _unlock(Action action, bytes memory args) internal returns (bytes memory) {

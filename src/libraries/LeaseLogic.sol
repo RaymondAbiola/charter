@@ -197,8 +197,12 @@ library LeaseLogic {
         uint256 slot
     ) external {
         address to = pending.bidder;
-        // a bid that no longer covers its bond leaves the incumbent untouched
-        if (pending.bond < _minBond(env, pending.units, r)) {
+        // the slot may have changed hands since the bid, so it has to beat whoever holds it now;
+        // a bid that fails that, or no longer covers its bond, leaves the incumbent untouched
+        uint256 current = l.manager == address(0) ? 0 : l.rentPips;
+        bool outbids = current == 0
+            || (pending.rentPips > current && pending.rentPips >= current * (10_000 + r.minRaiseBps) / 10_000);
+        if (!outbids || pending.bond < _minBond(env, pending.units, r)) {
             _refund(b, pending, env, slot);
             emit BidVoided(slot, to);
             return;

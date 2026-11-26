@@ -115,7 +115,7 @@ contract AuctionTest is Fixture {
 
         _warp(AUCTION_DELAY);
         _nextBlock();
-        _swapAs(mallory, true, -1e15);
+        _swapAs(mallory, true, -400e18);
         vm.expectRevert(Charter.NotReady.selector);
         charter.activate(0);
 
@@ -207,5 +207,35 @@ contract AuctionTest is Fixture {
         assertFalse(_hasLog(logs, Charter.LeaseEnded.selector), "nothing to end");
         assertEq(charter.lease(0).manager, carol);
         _ledger();
+    }
+
+    /// The slot changed hands after the bid: bob left and mallory took it at 10%. carol's 6% bid
+    /// was placed against bob's 5% and must not displace the better-paying lease.
+    function test_aStaleBidCannotDisplaceABetterPayingLease() public {
+        uint256 bond = charter.minBond(UNITS);
+        _bid(carol, 60_000, bond);
+        vm.prank(bob);
+        charter.exitLease(0);
+        _nextBlock();
+        uint256 mbond = charter.minBond(UNITS);
+        vm.prank(mallory);
+        charter.openLease(0, UNITS, 100_000, mbond, -600, 600);
+        _ready();
+
+        vm.expectEmit(true, true, false, false, address(charter));
+        emit Charter.BidVoided(0, carol);
+        charter.activate(0);
+        assertEq(charter.lease(0).manager, mallory, "the 10% lease keeps the slot");
+        assertEq(charter.lease(0).rentPips, 100_000);
+        assertEq(manager.balanceOf(carol, currency1.toId()), bond, "carol refunded");
+        _ledger();
+    }
+
+    function test_aDustSwapCannotStallATakeover() public {
+        _bid(carol, 60_000, charter.minBond(UNITS));
+        _ready();
+        _swapAs(mallory, true, -1);
+        charter.activate(0);
+        assertEq(charter.lease(0).manager, carol);
     }
 }

@@ -210,4 +210,16 @@ contract LiquidationTest is Fixture {
         assertApproxEqAbs(out0, p0, 2);
         assertApproxEqAbs(out1, p1, 2);
     }
+
+    function test_aDustSwapCannotStallRepassivation() public {
+        _open(charter.minBond(UNITS), 600);
+        _nextBlock();
+        _swapAs(mallory, true, -900e18);
+        _closed();
+        _nextBlock();
+        _swapAs(mallory, false, -1);
+        uint128 before = charter.passiveLiquidity();
+        charter.repassivate();
+        assertGt(charter.passiveLiquidity(), before);
+    }
 }
