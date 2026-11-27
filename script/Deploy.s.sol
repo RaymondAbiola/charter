@@ -49,7 +49,8 @@ contract Deploy is Script {
             minBondBps: 500,
             maintenanceBps: 100,
             auctionDelay: 5 minutes,
-            minRaiseBps: 500
+            minRaiseBps: 500,
+            shareCapBps: 500
         });
         uint160 flags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
         (address predicted, bytes32 salt) =

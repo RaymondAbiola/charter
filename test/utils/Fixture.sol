@@ -62,8 +62,14 @@ abstract contract Fixture is Test, Deployers {
             minBondBps: MIN_BOND_BPS,
             maintenanceBps: MAINTENANCE_BPS,
             auctionDelay: AUCTION_DELAY,
-            minRaiseBps: MIN_RAISE_BPS
+            minRaiseBps: MIN_RAISE_BPS,
+            shareCapBps: _shareCapBps()
         });
+    }
+
+    // most tests use deliberately large leases; the cap has its own suite
+    function _shareCapBps() internal pure virtual returns (uint16) {
+        return 10_000;
     }
 
     function _flags() internal pure returns (uint160) {

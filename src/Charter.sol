@@ -51,7 +51,8 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         Repassivate,
         Exit,
         Bid,
-        Activate
+        Activate,
+        Cancel
     }
 
     struct Config {
@@ -65,6 +66,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         uint16 maintenanceBps;
         uint32 auctionDelay;
         uint16 minRaiseBps;
+        uint16 shareCapBps;
     }
 
     uint256 internal constant Q128 = 1 << 128;
@@ -86,6 +88,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     uint16 public immutable maintenanceBps;
     uint32 public immutable auctionDelay;
     uint16 public immutable minRaiseBps;
+    uint16 public immutable shareCapBps;
     int24 public immutable fullLower;
     int24 public immutable fullUpper;
 
@@ -118,6 +121,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     error NotReady();
     error BidTooLow();
     error NoBid();
+    error ShareCapExceeded();
 
     event Bound(PoolId indexed id, uint160 sqrtPriceX96);
     event Deposit(address indexed payer, address indexed to, uint256 shares, uint256 amount0, uint256 amount1);
@@ -179,7 +183,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         }
         // the bond must leave room above the maintenance margin
         if (cfg.maintenanceBps == 0 || cfg.maintenanceBps >= cfg.minBondBps) revert BadConfig();
-        if (cfg.minRaiseBps == 0) revert BadConfig();
+        if (cfg.minRaiseBps == 0 || cfg.shareCapBps == 0 || cfg.shareCapBps > 10_000) revert BadConfig();
         currency0 = cfg.currency0;
         currency1 = cfg.currency1;
         tickSpacing = cfg.tickSpacing;
@@ -190,6 +194,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         maintenanceBps = cfg.maintenanceBps;
         auctionDelay = cfg.auctionDelay;
         minRaiseBps = cfg.minRaiseBps;
+        shareCapBps = cfg.shareCapBps;
         fullLower = TickMath.minUsableTick(cfg.tickSpacing);
         fullUpper = TickMath.maxUsableTick(cfg.tickSpacing);
     }
@@ -264,6 +269,12 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         _unlock(Action.Activate, abi.encode(slot));
     }
 
+    /// @notice Take back the escrow of your pending bid once it has been ready to activate but has
+    /// not gone through.
+    function cancelBid(uint256 slot) external {
+        _unlock(Action.Cancel, abi.encode(slot, msg.sender));
+    }
+
     /// @notice End your lease. It settles like a liquidation: rent first, liquidity pulled, then
     /// depositors take what they are owed at the clamped price and you keep the rest.
     function exitLease(uint256 slot) external {
@@ -313,7 +324,8 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
             settleSqrt: settlementSqrtPrice(),
             minBondBps: minBondBps,
             minRaiseBps: minRaiseBps,
-            auctionDelay: auctionDelay
+            auctionDelay: auctionDelay,
+            shareCapBps: shareCapBps
         });
     }
 
@@ -344,6 +356,9 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
             LeaseLogic.rebalance(_book, _leases[slot], _guards[slot], _env(), _rules(), slot, lo, hi);
         } else if (action == Action.Repassivate) {
             LeaseLogic.repassivate(_book, _env());
+        } else if (action == Action.Cancel) {
+            (uint256 slot, address caller) = abi.decode(args, (uint256, address));
+            LeaseLogic.cancelBid(_book, _bids[slot], _env(), slot, caller);
         } else {
             uint256 slot = abi.decode(args, (uint256));
             if (action == Action.Liquidate) {
@@ -462,6 +477,11 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
 
     function passiveGrowth1X128() external view returns (uint256) {
         return _book.passiveGrowth1X128;
+    }
+
+    /// @notice Sum of every lease's position liquidity, measured against the share cap.
+    function managedLiquidity() external view returns (uint256) {
+        return _book.managedLiquidity;
     }
 
     function totalEscrow() external view returns (uint256) {

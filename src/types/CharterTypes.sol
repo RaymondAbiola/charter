@@ -20,6 +20,8 @@ struct Book {
     uint256 uncovered;
     // token1 claims escrowed by pending bids
     uint256 totalEscrow;
+    // sum of every lease's position liquidity, for the share cap
+    uint256 managedLiquidity;
 }
 
 /// @dev A pending takeover of an occupied slot. Its bond is escrowed until it activates or is outbid.

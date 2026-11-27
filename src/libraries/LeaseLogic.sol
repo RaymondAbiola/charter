@@ -2,6 +2,10 @@
 pragma solidity ^0.8.26;
 
 import {CurrencySettler} from "@uniswap/hooks/utils/CurrencySettler.sol";
+import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
+import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
+import {PoolKey} from "v4-core/types/PoolKey.sol";
+import {PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
@@ -15,6 +19,8 @@ import {LeaseMath} from "./LeaseMath.sol";
 /// stays the owner of every position and the emitter of every event.
 library LeaseLogic {
     using CurrencySettler for Currency;
+    using StateLibrary for IPoolManager;
+    using PoolIdLibrary for PoolKey;
 
     uint256 internal constant YEAR = 365 days;
     uint256 internal constant Q128 = 1 << 128;
@@ -26,6 +32,9 @@ library LeaseLogic {
     error BondTooSmall();
     error BidTooLow();
     error NoLease();
+    error ShareCapExceeded();
+    error NoBid();
+    error NotReady();
 
     event LeaseOpened(
         uint256 indexed slot,
@@ -92,6 +101,7 @@ library LeaseLogic {
         uint256 minBondBps;
         uint256 minRaiseBps;
         uint256 auctionDelay;
+        uint256 shareCapBps;
     }
 
     // ------------------------------------------------------------------ entry points
@@ -105,6 +115,7 @@ library LeaseLogic {
         if (o.bond < _minBond(env, o.units, r)) revert BondTooSmall();
         g.validUntil = 0;
         _open(b, l, env, o);
+        _checkCap(b, env, r);
     }
 
     function rebalance(
@@ -122,6 +133,7 @@ library LeaseLogic {
         g.validUntil = 0;
         _exit(b, l, env, slot);
         uint128 liq = _enter(b, l, env, slot, lo, hi);
+        _checkCap(b, env, r);
         emit Rebalanced(slot, lo, hi, liq);
     }
 
@@ -234,6 +246,8 @@ library LeaseLogic {
         });
         _clearBid(pending);
         _open(b, l, env, o);
+        // a takeover that would breach the cap reverts as a whole, leaving the incumbent in place
+        _checkCap(b, env, r);
         emit TakenOver(slot, from, to);
     }
 
@@ -275,6 +289,14 @@ library LeaseLogic {
             r0 += o0;
             r1 += o1;
         }
+    }
+
+    /// @notice Lets a bidder take their escrow back once the bid has been ready to activate but has
+    /// not gone through, for instance because the takeover would breach the share cap.
+    function cancelBid(Book storage b, Bid storage pending, Env memory env, uint256 slot, address caller) external {
+        if (pending.bidder == address(0)) revert NoBid();
+        if (pending.bidder != caller || block.timestamp < pending.readyAt) revert NotReady();
+        _refund(b, pending, env, slot);
     }
 
     /// @notice Puts idle depositor tokens back into the passive full-range position.
@@ -436,8 +458,19 @@ library LeaseLogic {
         b.passiveLiquidity += liq;
     }
 
+    /// @dev Managed liquidity against everything else active in the pool, counting every lease as if
+    /// it were in range. That overstates the share, which is the safe side: past a few percent the
+    /// passive debt can no longer be pinned down closely.
+    function _checkCap(Book storage b, Env memory env, Rules memory r) private view {
+        uint256 managed = b.managedLiquidity;
+        uint256 active = env.pm.getLiquidity(env.key.toId());
+        uint256 others = active > managed ? active - managed : 0;
+        if (managed * 10_000 > r.shareCapBps * (others + managed)) revert ShareCapExceeded();
+    }
+
     function _exit(Book storage b, Lease storage l, Env memory env, uint256 slot) private {
         if (l.liquidity == 0) return;
+        b.managedLiquidity -= l.liquidity;
         BalanceDelta d =
             Positions.modify(env, Positions.leaseSalt(slot), l.tickLower, l.tickUpper, -int256(uint256(l.liquidity)));
         l.liquidity = 0;
@@ -457,6 +490,7 @@ library LeaseLogic {
         (uint256 owe0, uint256 owe1) =
             Positions.owed(Positions.modify(env, Positions.leaseSalt(slot), lo, hi, int256(uint256(liq))));
         Positions.debit(b, l, env, owe0, owe1);
+        b.managedLiquidity += liq;
         l.liquidity = liq;
         l.tickLower = lo;
         l.tickUpper = hi;

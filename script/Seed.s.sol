@@ -54,10 +54,10 @@ contract Seed is Script {
         int24 here = _tick();
         int24 mid = here / SPACING * SPACING;
         int24 full = TickMath.maxUsableTick(SPACING);
-        // other LPs: some full range, more concentrated around the price
-        _lp(-full, full, 20e15);
-        _lp(mid - 2400, mid + 2400, 60e15);
-        _lp(mid - 600, mid + 600, 60e15);
+        // other LPs, deep enough that the demo lease and its challenger stay under the 5% share cap
+        _lp(-full, full, 100e15);
+        _lp(mid - 2400, mid + 2400, 300e15);
+        _lp(mid - 600, mid + 600, 400e15);
 
         charter.deposit(3e15, type(uint256).max, type(uint256).max, me);
         uint128 units = 1e15;
