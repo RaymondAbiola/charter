@@ -72,6 +72,9 @@ library LeaseLogic {
     event BidVoided(uint256 indexed slot, address indexed bidder);
     event TakenOver(uint256 indexed slot, address indexed from, address indexed to);
     event Repassivated(uint128 liquidity);
+    event LeaseRecalled(
+        uint256 indexed slot, uint128 units, uint256 owedValue, uint256 sliceValue, uint256 bondUsed, uint256 uncovered
+    );
 
     /// @dev How a closed lease was split. Values in token1 at the settlement price.
     struct Settlement {
@@ -249,6 +252,115 @@ library LeaseLogic {
         // a takeover that would breach the cap reverts as a whole, leaving the incumbent in place
         _checkCap(b, env, r);
         emit TakenOver(slot, from, to);
+    }
+
+    /// @notice Brings `need` leased units back to depositors for a withdrawal, cheapest rent first.
+    /// A lease that is needed whole is closed exactly like an exit; otherwise it shrinks by the
+    /// units needed. The returned capital goes straight back to full range.
+    /// @dev Only called while the price is quiet, since it re-adds liquidity at spot.
+    function recall(
+        Book storage b,
+        mapping(uint256 => Lease) storage leases,
+        mapping(uint256 => Guard) storage guards,
+        Env memory env,
+        uint256 maxLeases,
+        uint160 sv,
+        uint256 need
+    ) external {
+        uint256 got;
+        while (got < need) {
+            (bool found, uint256 slot) = _cheapest(leases, maxLeases);
+            if (!found) break;
+            Lease storage l = leases[slot];
+            guards[slot].validUntil = 0;
+            uint256 du = need - got;
+            if (du >= l.units) {
+                got += l.units;
+                _emitEnded(slot, _close(b, l, env, slot, sv, _unitsValue(env, l.units, sv)));
+            } else {
+                got += du;
+                _shrink(b, l, env, slot, uint128(du), sv);
+            }
+        }
+        uint128 liq = _repassivate(b, env);
+        if (liq > 0) emit Repassivated(liq);
+    }
+
+    function _cheapest(mapping(uint256 => Lease) storage leases, uint256 maxLeases)
+        private
+        view
+        returns (bool found, uint256 slot)
+    {
+        uint256 best = type(uint256).max;
+        for (uint256 s; s < maxLeases; ++s) {
+            Lease storage l = leases[s];
+            if (l.manager == address(0) || l.rentPips >= best) continue;
+            best = l.rentPips;
+            slot = s;
+            found = true;
+        }
+    }
+
+    /// @dev Takes `du` units back from a lease. Rent is paid first and the position's fees are swept
+    /// into its loose balance, so the slice taken is exactly the fraction `du / units` of what the
+    /// lease holds. Depositors get what those units owe them; a richer slice leaves the rest with
+    /// the lease, a poorer one is topped up from the bond.
+    function _shrink(Book storage b, Lease storage l, Env memory env, uint256 slot, uint128 du, uint160 sv) private {
+        _chargeRent(b, l, slot, _unitsValue(env, l.units, sv));
+        bytes32 salt = Positions.leaseSalt(slot);
+        if (l.liquidity > 0) {
+            BalanceDelta f = Positions.modify(env, salt, l.tickLower, l.tickUpper, 0);
+            Positions.credit(b, l, env, uint128(f.amount0()), uint128(f.amount1()));
+        }
+        uint128 units = l.units;
+        uint256 s0 = FullMath.mulDiv(l.held0, du, units);
+        uint256 s1 = FullMath.mulDiv(l.held1, du, units);
+        uint128 dl = uint128(FullMath.mulDiv(l.liquidity, du, units));
+        if (dl > 0) {
+            BalanceDelta d = Positions.modify(env, salt, l.tickLower, l.tickUpper, -int256(uint256(dl)));
+            Positions.credit(b, l, env, uint128(d.amount0()), uint128(d.amount1()));
+            s0 += uint128(d.amount0());
+            s1 += uint128(d.amount1());
+            l.liquidity -= dl;
+            b.managedLiquidity -= dl;
+        }
+
+        (uint256 o0, uint256 o1) = Positions.fullRangeAmounts(env, sv, du, true);
+        (uint256 f0, uint256 f1) = LeaseMath.feeDebt(b, l);
+        o0 += FullMath.mulDivRoundingUp(f0, du, units);
+        o1 += FullMath.mulDivRoundingUp(f1, du, units);
+        uint256 owedValue = Positions.valueAt(o0, o1, sv);
+        uint256 sliceValue = Positions.valueAt(s0, s1, sv);
+
+        uint256 give0 = s0;
+        uint256 give1 = s1;
+        uint256 bondUsed;
+        uint256 gap;
+        if (sliceValue > owedValue) {
+            give0 = FullMath.mulDivRoundingUp(s0, owedValue, sliceValue);
+            give1 = FullMath.mulDivRoundingUp(s1, owedValue, sliceValue);
+            if (give0 > s0) give0 = s0;
+            if (give1 > s1) give1 = s1;
+        } else {
+            gap = owedValue - sliceValue;
+            bondUsed = gap < l.bond ? gap : l.bond;
+            gap -= bondUsed;
+            l.bond -= bondUsed;
+            b.totalBond -= bondUsed;
+            b.idle1 += bondUsed;
+            b.uncovered += gap;
+        }
+        // held and idle are both claims the hook already holds
+        l.held0 -= give0;
+        l.held1 -= give1;
+        b.totalHeld0 -= give0;
+        b.totalHeld1 -= give1;
+        b.idle0 += give0;
+        b.idle1 += give1;
+        // the fee debt on these units is paid by the slice, so it leaves with them
+        l.units = units - du;
+        b.leasedUnits -= du;
+        emit LeaseRecalled(slot, du, owedValue, sliceValue, bondUsed, gap);
     }
 
     /// @notice Before depositors come or go: collect each lease's rent, pull its position fees into

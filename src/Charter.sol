@@ -147,6 +147,9 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         uint256 uncovered
     );
     event Repassivated(uint128 liquidity);
+    event LeaseRecalled(
+        uint256 indexed slot, uint128 units, uint256 owedValue, uint256 sliceValue, uint256 bondUsed, uint256 uncovered
+    );
     event BidPlaced(
         uint256 indexed slot,
         address indexed bidder,
@@ -393,11 +396,23 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         (address owner, uint256 shares, address to) = abi.decode(args, (address, uint256, address));
         uint256 supply = totalSupply();
         _burn(owner, shares);
+        _recallFor(shares, supply);
         (uint256 r0, uint256 r1) = _settleLeases();
         (uint256 out0, uint256 out1) =
             VaultLogic.withdraw(_book, _env(), to, shares, supply, r0, r1, settlementSqrtPrice());
         emit Withdraw(owner, to, shares, out0, out1);
         return abi.encode(out0, out1);
+    }
+
+    /// @dev If this withdrawal's share of units is more than sits passive, bring the difference back
+    /// from leases first, cheapest rent first. A little slack covers rounding when it is re-added.
+    function _recallFor(uint256 shares, uint256 supply) internal {
+        uint256 passive = _book.passiveLiquidity;
+        uint256 dl = FullMath.mulDiv(passive + _book.leasedUnits, shares, supply);
+        if (dl <= passive) return;
+        if (!_quiet()) revert NotReady();
+        uint256 need = (dl - passive) * 1001 / 1000 + 1;
+        LeaseLogic.recall(_book, _leases, _guards, _env(), maxLeases, settlementSqrtPrice(), need);
     }
 
     /// @dev Pays leases' rent and what fee debt they can cover before depositors come or go, and

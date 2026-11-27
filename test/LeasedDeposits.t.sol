@@ -2,7 +2,6 @@
 pragma solidity ^0.8.26;
 
 import {FullMath} from "v4-core/libraries/FullMath.sol";
-import {VaultLogic} from "../src/libraries/VaultLogic.sol";
 import {Lease} from "../src/types/CharterTypes.sol";
 import {Fixture} from "./utils/Fixture.sol";
 
@@ -108,17 +107,6 @@ contract LeasedDepositsTest is Fixture {
         assertApproxEqRel(_value(o0, o1), total * shares / (charter.totalSupply() + shares), 1e14);
         assertGe(_redeemable(carol) + 2, carolBefore, "those who stay keep their value");
         _ledger();
-    }
-
-    function test_leasedCapitalCannotLeaveYet() public {
-        _open(-600, 600);
-        uint256 shares = charter.balanceOf(alice);
-        vm.prank(alice);
-        vm.expectRevert(VaultLogic.NotEnoughPassive.selector);
-        charter.withdraw(shares, 0, 0, alice);
-        // the unleased part can
-        vm.prank(alice);
-        charter.withdraw(shares / 2, 0, 0, alice);
     }
 
     /// An out-of-range lease earns no fees, so it cannot pay its fee debt from what it holds. The

@@ -57,9 +57,10 @@ library VaultLogic {
         b.passiveLiquidity += dl;
     }
 
-    /// @dev Call after burning the shares, passing the supply from before the burn. The share of
-    /// what leases still owe is paid from idle; where idle is short, the same value comes out of
-    /// the passive position at the settlement price. Leased capital itself cannot leave yet.
+    /// @dev Call after burning the shares, passing the supply from before the burn. Pays by value,
+    /// at the settlement price: the token share from idle, the unit share as passive liquidity, then
+    /// anything still owed (idle short of a token, or units the passive position cannot cover after a
+    /// recall) first as more passive liquidity and last from whatever idle is left.
     function withdraw(
         Book storage b,
         Env memory env,
@@ -72,18 +73,32 @@ library VaultLogic {
     ) external returns (uint256 out0, uint256 out1) {
         Positions.collectPassive(b, env);
 
-        uint256 units = uint256(b.passiveLiquidity) + b.leasedUnits;
-        uint256 dl = FullMath.mulDiv(units, shares, supply);
+        uint256 dl = FullMath.mulDiv(uint256(b.passiveLiquidity) + b.leasedUnits, shares, supply);
         uint256 want0 = FullMath.mulDiv(b.idle0 + r0, shares, supply);
         uint256 want1 = FullMath.mulDiv(b.idle1 + r1, shares, supply);
         out0 = want0 < b.idle0 ? want0 : b.idle0;
         out1 = want1 < b.idle1 ? want1 : b.idle1;
+
+        uint256 perUnit = _valueOfUnits(env, settleSqrt);
         uint256 short = Positions.valueAt(want0 - out0, want1 - out1, settleSqrt);
-        if (short > 0) {
-            (uint256 u0, uint256 u1) = Positions.fullRangeAmounts(env, settleSqrt, 1e18, true);
-            dl += FullMath.mulDiv(short, 1e18, Positions.valueAt(u0, u1, settleSqrt));
+        uint256 passive = b.passiveLiquidity;
+        if (dl > passive) {
+            short += FullMath.mulDivRoundingUp(dl - passive, perUnit, 1e18);
+            dl = passive;
         }
-        if (dl > b.passiveLiquidity) revert NotEnoughPassive();
+        if (short > 0 && dl < passive) {
+            uint256 extra = FullMath.mulDiv(short, 1e18, perUnit);
+            if (extra > passive - dl) extra = passive - dl;
+            dl += extra;
+            uint256 covered = FullMath.mulDiv(extra, perUnit, 1e18);
+            short = short > covered ? short - covered : 0;
+        }
+        // a couple of wei of rounding is not worth reverting over
+        if (short > 2) {
+            (uint256 add0, uint256 add1) = _fromLeftovers(b.idle0 - out0, b.idle1 - out1, short, settleSqrt);
+            out0 += add0;
+            out1 += add1;
+        }
 
         Positions.fromIdle(b, env, out0, out1);
         if (dl > 0) {
@@ -94,5 +109,24 @@ library VaultLogic {
         }
         env.key.currency0.take(env.pm, to, out0, false);
         env.key.currency1.take(env.pm, to, out1, false);
+    }
+
+    /// @dev token1 value of 1e18 full-range units at `sqrtP`.
+    function _valueOfUnits(Env memory env, uint160 sqrtP) private pure returns (uint256) {
+        (uint256 u0, uint256 u1) = Positions.fullRangeAmounts(env, sqrtP, 1e18, false);
+        return Positions.valueAt(u0, u1, sqrtP);
+    }
+
+    /// @dev Pays `value` (token1) out of spare idle: token1 first, then token0 at `sqrtP`.
+    function _fromLeftovers(uint256 spare0, uint256 spare1, uint256 value, uint160 sqrtP)
+        private
+        pure
+        returns (uint256 a0, uint256 a1)
+    {
+        a1 = value < spare1 ? value : spare1;
+        value -= a1;
+        if (value == 0) return (0, a1);
+        a0 = FullMath.mulDivRoundingUp(FullMath.mulDivRoundingUp(value, 1 << 96, sqrtP), 1 << 96, sqrtP);
+        if (a0 > spare0) revert NotEnoughPassive();
     }
 }
