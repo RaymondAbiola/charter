@@ -683,9 +683,16 @@ function Deposit() {
               onChange={(e) => form.setSlippage(e.target.value)}
             />
           </label>
+          {account && w && (
+            <div className="c-wallet-balances" aria-label="Wallet balances">
+              <span>Wallet</span>
+              <b>{token(w.weth, 18, 4)} tWETH</b>
+              <b>{token(w.usdc, 6, 2)} tUSDC</b>
+            </div>
+          )}
           <p className="c-small">
             {account && w
-              ? `Wallet: ${token(w.weth, 18, 4)} tWETH · ${token(w.usdc, 6, 2)} tUSDC. Slippage sets maximum token inputs or minimum token outputs.`
+              ? "Slippage sets maximum token inputs or minimum token outputs."
               : "Connect a wallet to deposit. Reading works without one."}
           </p>
           {(form.error || form.validation) && (
@@ -794,7 +801,7 @@ function Leases() {
       </section>
       {data.bids.map((bid) => (
         <div className="c-takeover" key={bid.slot}>
-          <div>
+          <div className="c-takeover-copy">
             <span className="c-eyebrow">
               TAKEOVER NOTICE / SLOT 0{bid.slot}
             </span>
@@ -803,27 +810,32 @@ function Leases() {
               <b>{percent(bid.rentRate)}</b> annual rent on{" "}
               {money(bid.capital, true)} with a {money(bid.bond, true)} bond.
             </p>
-            {bid.takeoverAt <= now && (
-              <>
-                <button
-                  className="c-outline"
-                  disabled={takeover.pending || !account}
-                  onClick={() => void takeover.activate(bid.slot)}
-                >
-                  {takeover.pending ? WAITING : "Activate takeover →"}
-                </button>{" "}
-                {account?.toLowerCase() === bid.manager.toLowerCase() && (
-                  <button
-                    className="c-text-button"
-                    disabled={takeover.pending}
-                    onClick={() => void takeover.cancel(bid.slot)}
-                  >
-                    Cancel bid
-                  </button>
-                )}
-              </>
-            )}
           </div>
+          {bid.takeoverAt <= now && (
+            <div className="c-takeover-actions">
+              <button
+                className="c-outline"
+                disabled={takeover.pending || !account}
+                onClick={() => void takeover.activate(bid.slot)}
+              >
+                {takeover.pending ? WAITING : "Activate takeover →"}
+              </button>
+              {account?.toLowerCase() === bid.manager.toLowerCase() && (
+                <button
+                  className="c-text-button"
+                  disabled={takeover.pending}
+                  onClick={() => void takeover.cancel(bid.slot)}
+                >
+                  Cancel bid
+                </button>
+              )}
+              {!account && (
+                <small className="c-takeover-hint">
+                  Connect a wallet to activate takeover.
+                </small>
+              )}
+            </div>
+          )}
           <strong>
             {bid.takeoverAt > now
               ? `${String(Math.floor((bid.takeoverAt - now) / 60000)).padStart(2, "0")}:${String(Math.floor((bid.takeoverAt - now) / 1000) % 60).padStart(2, "0")}`
@@ -878,6 +890,15 @@ function Leases() {
                   value={form.rent}
                   onChange={(e) => form.setRent(e.target.value)}
                 />
+                {form.occupied ? (
+                  <small className="c-field-hint">
+                    {`This slot is leased. Offer at least ${percent(form.minRent)} to qualify; the takeover can run five minutes after the bid and settles the current manager first.`}
+                  </small>
+                ) : (
+                  <small className="c-field-hint">
+                    This slot is open. The lease starts in this transaction.
+                  </small>
+                )}
               </label>
               <label>
                 CAPITAL (USDC)
@@ -896,14 +917,11 @@ function Leases() {
                   value={form.bond}
                   onChange={(e) => form.setBond(e.target.value)}
                 />
+                <small className="c-field-hint">
+                  Minimum bond {money(form.minBond)}, 5% of capital.
+                </small>
               </label>
             </div>
-            <p className="c-small">
-              {form.occupied
-                ? `This slot is leased. Offer at least ${percent(form.minRent)} to qualify; the takeover can run five minutes after the bid and settles the current manager first.`
-                : "This slot is open. The lease starts in this transaction."}{" "}
-              Minimum bond {money(form.minBond)}, 5% of capital.
-            </p>
             {form.error && (
               <p role="alert" className="c-error">
                 {form.error}

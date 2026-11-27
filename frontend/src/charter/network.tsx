@@ -15,16 +15,27 @@ export function NetworkPanel() {
     <details className="c-net-tools">
       <summary>Test tokens</summary>
       <div className="c-net-panel">
-        <p>
-          Unichain Sepolia · block {data.block.toLocaleString("en-US")}
-          {!data.historySynced && " · log index unreachable, logbook may lag"}
-        </p>
+        <div className="c-net-status">
+          <span>Unichain Sepolia</span>
+          <b>Block {data.block.toLocaleString("en-US")}</b>
+        </div>
+        {!data.historySynced && <p>Log index unreachable, logbook may lag</p>}
         {account && w ? (
           <>
-            <p>
-              {token(w.weth, 18, 4)} tWETH · {token(w.usdc, 6, 2)} tUSDC ·{" "}
-              {token(w.eth, 18, 4)} ETH
-            </p>
+            <dl className="c-net-balances" aria-label="Wallet balances">
+              <div>
+                <dt>tWETH</dt>
+                <dd>{token(w.weth, 18, 4)}</dd>
+              </div>
+              <div>
+                <dt>tUSDC</dt>
+                <dd>{token(w.usdc, 6, 2)}</dd>
+              </div>
+              <div>
+                <dt>ETH</dt>
+                <dd>{token(w.eth, 18, 4)}</dd>
+              </div>
+            </dl>
             <button
               className="c-outline"
               disabled={faucet.pending}
