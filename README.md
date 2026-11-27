@@ -195,7 +195,8 @@ forge coverage --ir-minimum --report summary --no-match-coverage "(^test|^script
 - **Guard soundness:** a fuzz test that a lease inside its armed band is never liquidatable.
 - **Regressions:** the bugs found in review have tests that fail on the old code.
 - **Coverage:** 98.6% of lines, 96.7% of statements, 99.2% of functions and 76.3% of branches across `src/`.
-- **Static analysis:** Slither raised nothing beyond what the review had already found and fixed.
+- **Static analysis:** `slither . --filter-paths "lib/|test/|script/" --exclude-informational --exclude-optimization` reports 42 Low and Medium findings and no High. We reviewed each one. They are fields deliberately ignored from `getSlot0`, view functions that return a library call directly, locals that start at zero on purpose, ERC-6909 transfers (which revert rather than return false), events emitted after calls to the PoolManager, and intended timestamp checks. None is a bug.
+- **No admin.** Charter has no owner, no upgrade path and no pause. Every parameter is immutable from deployment. Nobody can change the terms a depositor or manager signed up to, at the cost of having no emergency brake.
 
 Identity never comes from a hook callback's `sender`, which inside a hook is the router, not the user. Deposits, leases and bids all go through Charter's own entry points, which use `msg.sender`, and depositor payouts go to the address the caller names.
 
@@ -296,9 +297,9 @@ Without `POOL_MANAGER` set, `Deploy.s.sol` also deploys a fresh PoolManager, whi
 ## Honest limits
 
 - **Rent depends on managers having an edge.** The study found market-making skill close to passive for all four vaults. If no manager can beat the benchmark, nobody bids, and Charter is simply a passive full-range vault. Depositors lose nothing against passive by finding out. Charter is the safe way to learn whether a manager is worth paying, not a promise that one is.
-- **One swap can outrun the bond.** A single swap far past a lease's range can leave a shortfall bigger than its bond. The hook records it as `uncovered` and depositors share it. A test shows it happening rather than pretending it cannot. The bond and the 1% margin absorb ordinary moves; how often a gap outruns them depends on the manager's range and on the market.
+- **One swap can outrun the bond.** A single swap far past a lease's range can leave a shortfall bigger than its bond. Depositors share it pro rata, because the vault simply holds less, so every share is worth slightly less and no depositor is singled out. The running total is public as `uncovered()`. A test shows it happening rather than pretending it cannot. The bond and the 1% margin absorb ordinary moves; how often a gap outruns them depends on the manager's range and on the market.
 - **The passive benchmark is an estimate.** It sits within a few percent of the truth on the fee part, at the capped share, and leans toward the depositor.
-- **The share cap is checked when a lease is placed, rebalanced or taken over,** not as other LPs come and go. If outside liquidity leaves, a lease can end up above 5% until its next change.
+- **The share cap is checked when a lease is placed, rebalanced or taken over,** not as other LPs come and go. If outside liquidity leaves, a lease can end up above 5% until its next change. In the twin tests, a larger share pushed the estimate's error further toward overcharging the manager, not toward depositors: +5.89% at a 7.9% share and +22.57% at 24.7%. So the cost of a breach falls mainly on the manager, though the tests do not cover every flow at those sizes.
 - **Settlement trusts the block's opening price.** Within a block, valuations are clamped to it. Across blocks, Charter trusts the pool's price like any onchain LP position does, and has no external oracle.
 - **No native ETH.** The pool uses ERC-20 tokens; a WETH wrapper would be a small addition.
 - **A static-fee pool would work too.** Nothing in the design needs a dynamic fee; the hook only needs to know the fee. A static-fee deployment would be a small change to the pool key and the bind check.
