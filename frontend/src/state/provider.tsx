@@ -43,6 +43,8 @@ export function ChainProvider({ children }: { children: ReactNode }) {
   const [connectError, setConnectError] = useState("");
   // only read once a snapshot has loaded on the client, so server and client markup still agree
   const [now, setNow] = useState(() => Date.now());
+  // chain time runs ahead of or behind this machine's clock; countdowns follow the chain
+  const skew = useRef(0);
   const accountRef = useRef<Address | null>(null);
   const busy = useRef<Promise<void> | null>(null);
 
@@ -51,6 +53,7 @@ export function ChainProvider({ children }: { children: ReactNode }) {
     const run = async () => {
       try {
         const snap = await reader.read(accountRef.current);
+        skew.current = snap.at - Date.now();
         setData(snap);
         setStatus("ready");
       } catch {
@@ -72,7 +75,7 @@ export function ChainProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    const clock = setInterval(() => setNow(Date.now()), 1000);
+    const clock = setInterval(() => setNow(Date.now() + skew.current), 1000);
     const poll = setInterval(() => void refresh(), POLL_MS);
     void connected()
       .then((a) => select(a))
