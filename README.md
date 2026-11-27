@@ -254,7 +254,16 @@ The frontend in [`frontend/`](frontend/) runs against these contracts. Connect a
 
 ### Move the price yourself
 
-The test pool uses mock tokens and a dynamic-fee key, so Uniswap's interface does not route to it. Trade through the deployed `PoolSwapTest` router instead. Selling 2 tWETH, which pushes the price down:
+The test pool uses mock tokens and a dynamic-fee key, so Uniswap's interface does not route to it. From a clone of this repo, one command trades the pool to any price, given in tUSDC per tWETH. It mints whatever input the trade needs and prints each lease before and after:
+
+```bash
+forge script script/Move.s.sol --sig "run(uint256)" 3400 \
+  --rpc-url https://unichain-sepolia-rpc.publicnode.com --broadcast --account <keystore> --sender <address>
+```
+
+A big jump in one block settles at the clamped price, so step the price over a few blocks to watch a lease fail the way it would in a real market.
+
+Without the repo, trade through the deployed `PoolSwapTest` router directly. Selling 2 tWETH, which pushes the price down:
 
 ```bash
 RPC=https://unichain-sepolia-rpc.publicnode.com
@@ -316,7 +325,7 @@ We searched all 765 entries in the Atrium hook directory, as listed in November 
 | [`src/libraries/`](src/libraries/) | `VaultLogic`, `LeaseLogic`, `RiskLogic`, `ViewLogic` (external), plus the math libraries |
 | [`src/types/CharterTypes.sol`](src/types/CharterTypes.sol) | The vault's book, leases, guards and bids |
 | [`test/`](test/) | Unit, fuzz, twin-pool, attack, gas and invariant suites |
-| [`script/`](script/) | Deploy and seed |
+| [`script/`](script/) | Deploy, seed, and move the price |
 | [`deployments/1301.json`](deployments/1301.json) | Unichain Sepolia addresses |
 | [`analysis/`](analysis/) | The mainnet vault study, in Python with only the standard library |
 | [`frontend/`](frontend/) | The app |
