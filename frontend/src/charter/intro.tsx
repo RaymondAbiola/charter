@@ -90,6 +90,13 @@ export function OverviewIntro() {
           Managers run the strategy. The passive benchmark defines what they
           owe.
         </p>
+        <p className="c-replay-lead">
+          Historical replay: three mainnet vaults that left depositors 12 to 14
+          points behind passive would have left them at passive.
+        </p>
+        <a className="c-replay-link" href="#vault-replay">
+          See the block-by-block replay <span aria-hidden="true">↓</span>
+        </a>
         <a className="c-study-link" href="#vault-study">
           Why this design? Read the four-vault study{" "}
           <span aria-hidden="true">↓</span>

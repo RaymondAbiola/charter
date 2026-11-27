@@ -23,6 +23,7 @@ import type { Screen } from "@/lib/screens";
 import { NetworkPanel } from "./network";
 import { OverviewIntro, ScreenNote } from "./intro";
 import { SnapshotLoading } from "./snapshot-state";
+import { VaultReplay } from "./replay";
 import { useChain, useSnapshot } from "@/state/provider";
 import {
   useActivity,
@@ -183,7 +184,12 @@ export function Charter({ screen }: { screen: Screen }) {
           ) : (
             <Activity />
           )}
-          {screen === "overview" && <Evidence />}
+          {screen === "overview" && (
+            <>
+              <Evidence />
+              <VaultReplay />
+            </>
+          )}
           <footer className="c-footer">
             <span>UHI-11 / UNISWAP V4</span>
             <p>

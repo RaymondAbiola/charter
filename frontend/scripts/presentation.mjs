@@ -58,6 +58,108 @@ try {
   passed.push(
     "The overview connects manager-chosen exposure to Charter's obligation and links to the study",
   );
+  for (const width of [1440, 375]) {
+    await page.setViewport({ width, height: 1000 });
+    await page.goto(base, { waitUntil: "networkidle0" });
+    await loaded(page);
+    await page.click('a[href="#vault-replay"]');
+    await page.waitForFunction(() => location.hash === "#vault-replay");
+    assert.ok(
+      await page.$eval(
+        "#vault-replay",
+        (el) => el.getBoundingClientRect().top < innerHeight,
+      ),
+    );
+    assert.equal(
+      await page.$eval("#vault-replay", (el) => el.previousElementSibling.id),
+      "vault-study",
+    );
+    const rows = await page.$$eval(".c-replay-table tbody tr", (rows) =>
+      rows.map((row) => ({
+        vault: row.querySelector("th b").textContent,
+        closed: row.querySelector("th small").textContent,
+        actual: row.querySelector(".c-replay-before strong").textContent,
+        passive: row.querySelector(".c-replay-passive strong").textContent,
+        details: [
+          ...row.querySelectorAll(".c-replay-detail > span:last-child"),
+        ].map((el) => el.textContent),
+      })),
+    );
+    assert.deepEqual(rows, [
+      {
+        vault: "Charm Alpha Vault",
+        closed: "Lease closed on day 103",
+        actual: "-12.30%",
+        passive: "0.00%",
+        details: ["+1.30%", "3.90%", "0.00%"],
+      },
+      {
+        vault: "G-UNI (Arrakis V1)",
+        closed: "Lease closed on day 118",
+        actual: "-14.10%",
+        passive: "0.00%",
+        details: ["+1.30%", "3.70%", "0.00%"],
+      },
+      {
+        vault: "Vault 0x381e",
+        closed: "Lease closed on day 169",
+        actual: "-14.10%",
+        passive: "0.00%",
+        details: ["+2.10%", "4.20%", "0.00%"],
+      },
+      {
+        vault: "Vault 0x5763",
+        closed: "Lease closed on day 41",
+        actual: "+12.90%",
+        passive: "0.00%",
+        details: ["+0.60%", "4.00%", "0.00%"],
+      },
+    ]);
+    const copy = await page.$eval("#vault-replay", (el) => el.innerText);
+    assert.match(copy, /MODEL \/ NOT A LIVE RESULT/);
+    assert.match(copy, /Source: analysis\/backtest.py[\s\S]*not a live result/);
+    assert.match(copy, /depositors give up the upside/);
+    assert.match(
+      copy,
+      /24 cases tested[\s\S]*2.65%[\s\S]*36%[\s\S]*63%[\s\S]*19.8%/,
+    );
+    assert.ok(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    );
+    assert.deepEqual(
+      await page.$$eval("#vault-replay p, #vault-replay li", (els) =>
+        els
+          .filter(
+            (el) =>
+              !el.classList.contains("c-eyebrow") &&
+              parseFloat(getComputedStyle(el).fontSize) < 14,
+          )
+          .map((el) => el.className),
+      ),
+      [],
+    );
+    await page.addScriptTag({ content: axe.source });
+    const replayA11y = await page.evaluate(() =>
+      window.axe.run(document, {
+        runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa"] },
+      }),
+    );
+    assert.deepEqual(
+      replayA11y.violations.map((v) => ({
+        id: v.id,
+        targets: v.nodes.map((n) => n.target),
+      })),
+      [],
+    );
+    await (
+      await page.$("#vault-replay")
+    ).screenshot({ path: join(output, `replay-${width}.png`) });
+    passed.push(
+      `Historical replay at ${width}px shows all exact figures, positive upside trade-off, source and findings with no automated A/AA violations`,
+    );
+  }
   for (const width of [375, 1440]) {
     await page.setViewport({ width, height: 1000 });
     await page.goto(`${base}/deposit`, { waitUntil: "networkidle0" });
@@ -242,6 +344,10 @@ try {
   assert.ok(await offline.$("#agreement-title"));
   assert.ok(await offline.$(".c-research"));
   assert.equal(await offline.$(".c-capital"), null);
+  assert.match(
+    await offline.$eval("#vault-replay", (el) => el.innerText),
+    /MODEL \/ NOT A LIVE RESULT[\s\S]*-12.30%[\s\S]*Source: analysis\/backtest.py/,
+  );
   const evidence = await offline.$eval(".c-research", (e) => e.innerText);
   for (const number of [
     "-12.70%",
@@ -275,6 +381,7 @@ try {
   assert.ok(await offline.$("#agreement-title"));
   assert.ok(await offline.$(".c-research"));
   assert.ok(await offline.$('main section[role="alert"] button'));
+  assert.ok(await offline.$("#vault-replay #replay-source"));
   await offline.screenshot({
     path: join(output, "error-375.png"),
     fullPage: true,
