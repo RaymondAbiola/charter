@@ -14,9 +14,13 @@ export const launch = () =>
  * Stands in for a browser wallet. Reads and sends go to `rpc`. With `send: false` every
  * transaction is refused, so a check against the live chain can never spend anything.
  */
-export async function injectWallet(page, { account, rpc, send }) {
+export async function injectWallet(page, { account, rpc, send, unknownChain }) {
   await page.evaluateOnNewDocument(
-    (account, rpc, send) => {
+    (account, rpc, send, unknownChain) => {
+      // with unknownChain the wallet starts elsewhere and, like Rabby, rejects a switch
+      // to a chain it has not been given yet with a generic internal error
+      let chainId = unknownChain ? "0x1" : "0x515";
+      let known = !unknownChain;
       const call = async (method, params) => {
         const res = await fetch(rpc, {
           method: "POST",
@@ -36,12 +40,23 @@ export async function injectWallet(page, { account, rpc, send }) {
         async request({ method, params }) {
           if (method === "eth_requestAccounts" || method === "eth_accounts")
             return [account];
-          if (method === "eth_chainId") return "0x515";
-          if (
-            method === "wallet_switchEthereumChain" ||
-            method === "wallet_addEthereumChain"
-          )
+          if (method === "eth_chainId") return chainId;
+          if (method === "wallet_addEthereumChain") {
+            known = true;
+            chainId = "0x515";
             return null;
+          }
+          if (method === "wallet_switchEthereumChain") {
+            if (!known) {
+              const error = new Error(
+                'Unrecognized chain ID "0x515". Try adding the chain using wallet_addEthereumChain first.',
+              );
+              error.code = -32603;
+              throw error;
+            }
+            chainId = "0x515";
+            return null;
+          }
           if (method === "eth_sendTransaction" && !send) {
             const error = new Error("User rejected the request.");
             error.code = 4001;
@@ -56,6 +71,7 @@ export async function injectWallet(page, { account, rpc, send }) {
     account,
     rpc,
     send,
+    Boolean(unknownChain),
   );
 }
 

@@ -108,7 +108,12 @@ try {
   await page.setViewport({ width: 1440, height: 1000 });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await injectWallet(page, { account: me, rpc, send: true });
+  await injectWallet(page, {
+    account: me,
+    rpc,
+    send: true,
+    unknownChain: true,
+  });
 
   await page.goto(`${base}/deposit`, {
     waitUntil: "networkidle0",

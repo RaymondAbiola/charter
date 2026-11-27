@@ -8,6 +8,7 @@ Depositors get the passive return without having to judge who is skilled. Manage
 
 | | |
 | --- | --- |
+| Live app | [charter-lease.vercel.app](https://charter-lease.vercel.app), reading and writing the deployed contracts |
 | Theme | UHI-11, Active Management and Curated Liquidity |
 | Network | Unichain Sepolia, hook [`0x47c2652A9AD7704A7eDbe8A276F213b59e51e0C0`](https://sepolia.uniscan.xyz/address/0x47c2652A9AD7704A7eDbe8A276F213b59e51e0C0), verified |
 | Contracts | One hook plus four delegatecall libraries, every one under the 24 KB limit |
@@ -251,7 +252,7 @@ At deployment, [`script/Seed.s.sol`](script/Seed.s.sol) set up the following:
 
 ### Use the app
 
-The frontend in [`frontend/`](frontend/) runs against these contracts. Connect a browser wallet with a little Unichain Sepolia ETH for gas, then mint test tokens from the footer. From there you can deposit, open a lease, bid, activate a takeover, rebalance, top up a bond or exit, and watch every number update from the chain. See [`frontend/README.md`](frontend/README.md).
+The app at [charter-lease.vercel.app](https://charter-lease.vercel.app), built from [`frontend/`](frontend/), runs against these contracts. Connect a browser wallet with a little Unichain Sepolia ETH for gas, then mint test tokens from the footer. From there you can deposit, open a lease, bid, activate a takeover, rebalance, top up a bond or exit, and watch every number update from the chain. See [`frontend/README.md`](frontend/README.md).
 
 ### Move the price yourself
 

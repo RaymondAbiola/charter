@@ -42,12 +42,20 @@ async function onChain(w: ReturnType<typeof wallet>) {
   if ((await w.getChainId()) === deployment.chainId) return;
   try {
     await w.switchChain({ id: deployment.chainId });
+    return;
   } catch (error) {
-    const code = (error as { code?: number }).code;
-    const inner = (error as { cause?: { code?: number } }).cause?.code;
-    if (code !== 4902 && inner !== 4902) throw error;
-    await w.addChain({ chain });
+    // wallets word "unknown chain" differently (MetaMask 4902, Rabby an internal error),
+    // so anything short of the user saying no gets one attempt to add the chain
+    if (
+      error instanceof BaseError &&
+      error.walk((e) => e instanceof UserRejectedRequestError)
+    )
+      throw error;
+    if ((error as { code?: number }).code === 4001) throw error;
   }
+  await w.addChain({ chain });
+  if ((await w.getChainId()) !== deployment.chainId)
+    await w.switchChain({ id: deployment.chainId });
 }
 
 export async function connect(): Promise<Address> {
