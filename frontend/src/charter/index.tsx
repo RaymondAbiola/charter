@@ -233,7 +233,7 @@ function Gauge({ ratio, label }: { ratio: number; label: string }) {
           y="128"
           textAnchor="middle"
           fill="#a8b6bf"
-          fontSize="14"
+          fontSize="15"
           letterSpacing="1"
         >
           EQUITY / OWED

@@ -60,6 +60,46 @@ async function fits(page, label) {
   assert.deepEqual(overflow, [], `${label}: nothing overflows the page`);
 }
 
+/** Catches a collapsed layout, which text and accessibility checks alone let through. */
+async function laidOut(page, label, width) {
+  const layout = await page.evaluate(() => {
+    const side = document.querySelector(".c-sidebar");
+    const skip = document.querySelector(".c-skip");
+    const links = [
+      ...document.querySelectorAll('nav[aria-label="Charter screens"] a'),
+    ];
+    return {
+      pageWidth: document.documentElement.scrollWidth,
+      sidebarPosition: side ? getComputedStyle(side).position : null,
+      skipBottom: skip ? skip.getBoundingClientRect().bottom : null,
+      navRows: new Set(
+        links.map((a) => Math.round(a.getBoundingClientRect().top)),
+      ).size,
+      navCount: links.length,
+    };
+  });
+  assert.ok(
+    layout.pageWidth <= width + 1,
+    `${label}: the page does not scroll sideways`,
+  );
+  assert.ok(
+    layout.skipBottom !== null && layout.skipBottom <= 0,
+    `${label}: the skip link stays hidden until focused`,
+  );
+  if (width >= 1200) {
+    assert.equal(
+      layout.sidebarPosition,
+      "fixed",
+      `${label}: the sidebar is fixed`,
+    );
+    assert.equal(
+      layout.navRows,
+      layout.navCount,
+      `${label}: one navigation link per row`,
+    );
+  }
+}
+
 const browser = await launch();
 try {
   const page = await browser.newPage();
@@ -92,6 +132,7 @@ try {
       if (screen === "activity")
         await waitText(page, /\d+ ENTRIES \/ LIVE/, { errors: false });
       await fits(page, label);
+      await laidOut(page, label, width);
       if (width === 375) {
         await page.addScriptTag({ content: axe.source });
         const result = await page.evaluate(() =>

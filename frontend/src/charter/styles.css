@@ -1677,3 +1677,560 @@
   max-width: 300px;
   margin-inline: auto;
 }
+
+/* Judge-facing visual system */
+.nautical {
+  --c-navy: #0b2130;
+  --c-panel: #153244;
+  --c-line: #35505f;
+  --c-sand: #f1ead8;
+  --c-brass: #dfbd7b;
+  --c-muted: #b4c1c7;
+  background:
+    radial-gradient(circle at 78% 12%, rgba(223, 189, 123, 0.045), transparent 24%),
+    var(--c-navy);
+}
+
+.c-sidebar {
+  width: 248px;
+  padding: 28px 26px;
+  background:
+    linear-gradient(180deg, rgba(223, 189, 123, 0.025), transparent 35%),
+    #0a202d;
+  border-right-color: #2d4957;
+}
+.c-body {
+  margin-left: 248px;
+}
+.c-brand {
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: -0.055em;
+}
+.c-monogram {
+  width: 34px;
+  height: 36px;
+  margin-right: 10px;
+}
+.c-brand-sub {
+  margin-left: 44px;
+  color: #9fb0b8;
+  line-height: 1.5;
+}
+.c-pool {
+  margin-top: 30px;
+  padding: 22px 0;
+}
+.c-pool p,
+.c-pool small {
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.07em;
+}
+.c-pool strong {
+  font-size: 32px;
+  line-height: 1.12;
+}
+.c-sidebar nav {
+  gap: 4px;
+  margin-top: 22px;
+}
+.c-sidebar nav > a {
+  min-height: 48px;
+  margin: 2px -10px;
+  padding: 12px 10px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 550;
+}
+.c-sidebar nav > a > span {
+  min-width: 18px;
+  font-size: 11px;
+}
+.c-sidebar nav > a[aria-current] {
+  border-color: #405a67;
+  background: #1b3a49;
+  box-shadow: inset 3px 0 0 var(--c-brass);
+}
+.c-sidebar-foot,
+.c-sidebar-foot p {
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.c-header {
+  min-height: 76px;
+  padding: 16px 32px;
+  background: rgba(11, 33, 48, 0.96);
+}
+.c-header > span,
+.c-header > p,
+.c-header > p > b,
+.c-heading > span {
+  font-size: 11px;
+  line-height: 1.55;
+  letter-spacing: 0.055em;
+}
+.c-header button {
+  min-height: 44px;
+  padding: 10px 14px;
+  border-color: #557080;
+  background: #17394a;
+  font-size: 12px;
+}
+.c-header .c-disconnect {
+  border-color: transparent;
+  background: transparent;
+}
+.c-main {
+  max-width: 1360px;
+  padding: 36px 32px 48px;
+}
+.c-heading {
+  margin-bottom: 28px;
+}
+.c-heading h1 {
+  font-size: 40px;
+  letter-spacing: -0.045em;
+}
+.c-eyebrow {
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.08em;
+}
+
+.c-overview-instruments,
+.c-position,
+.c-transfer,
+.c-bid-form,
+.c-coverage,
+.c-bond-ops,
+.c-manager-numbers,
+.c-range,
+.c-takeover,
+.c-state {
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(4, 17, 24, 0.12);
+}
+.c-overview-instruments {
+  border-color: #405967;
+}
+.c-capital {
+  background:
+    linear-gradient(135deg, rgba(223, 189, 123, 0.055), transparent 42%),
+    var(--c-panel);
+}
+.c-capital > strong {
+  font-size: 46px;
+  letter-spacing: -0.065em;
+}
+.c-capital > p:not(.c-eyebrow) {
+  font-size: 14px;
+  line-height: 1.65;
+}
+.c-split-labels,
+.c-small-stats p,
+.c-gauge-row > div > p,
+.c-bond-label,
+.c-manager-numbers p,
+.c-log-number,
+.c-footer,
+.c-footer > span {
+  font-size: 11px;
+  line-height: 1.5;
+}
+.c-split-labels b,
+.c-small-stats b {
+  font-size: 20px;
+}
+.c-surveillance {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.018), transparent 60%),
+    #132f40;
+}
+.c-panel-heading {
+  margin-bottom: 20px;
+}
+.c-panel-heading h2 {
+  font-size: 22px;
+}
+.c-panel-heading > span {
+  font-size: 11px;
+  line-height: 1.45;
+  letter-spacing: 0.035em;
+}
+.c-gauge figcaption,
+.c-gauge-row > div > p,
+.c-bond-label,
+.c-coverage .c-gauge figcaption {
+  font-size: 11px;
+  line-height: 1.45;
+}
+.c-gauge-row {
+  align-items: stretch;
+}
+.c-gauge-row > div {
+  border: 1px solid rgba(75, 104, 119, 0.7);
+  border-radius: 6px;
+  padding: 14px 12px 12px;
+  background: rgba(10, 32, 45, 0.28);
+}
+
+.c-contract {
+  padding: 36px 0;
+}
+.c-contract li p,
+.c-contract li b,
+.c-research-note,
+.c-research figcaption,
+.c-research figcaption p,
+.c-source {
+  font-size: 12px;
+  line-height: 1.65;
+}
+.c-contract li b {
+  font-size: 14px;
+  font-weight: 650;
+}
+.c-research figure {
+  border-radius: 6px;
+  background: rgba(19, 46, 63, 0.72);
+}
+
+.nautical th,
+.nautical td,
+.nautical .c-table-wrap th,
+.nautical .c-table-wrap td {
+  font-size: 14px;
+  line-height: 1.45;
+  padding: 14px 10px;
+}
+.nautical th {
+  font-size: 12px;
+  font-weight: 500;
+  color: #becbd1;
+}
+.nautical small,
+.c-small,
+.c-error,
+.c-feedback,
+.c-logbook li p,
+.c-logbook li > div > span,
+.c-log-value time,
+.c-field-hint,
+.c-wallet-balances,
+.c-takeover-hint,
+.c-exit p,
+.c-position > p:not(.c-eyebrow),
+.c-contract-note > p {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.c-takeover {
+  background:
+    linear-gradient(100deg, rgba(223, 189, 123, 0.05), transparent 55%),
+    #1d3945;
+  border-color: #817853;
+}
+.c-takeover p {
+  font-size: 14px;
+  line-height: 1.55;
+}
+.c-takeover small,
+.c-takeover .c-eyebrow {
+  font-size: 11px;
+  line-height: 1.45;
+}
+.c-takeover > strong {
+  font-size: 32px;
+}
+.c-takeover-actions button {
+  min-height: 44px;
+  font-size: 12px;
+}
+
+.nautical label,
+.c-range-bounds label,
+.c-position dt,
+.c-check {
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+}
+.nautical input,
+.nautical select {
+  min-height: 46px;
+  font-size: 14px;
+  border-radius: 5px;
+}
+.nautical button {
+  min-height: 44px;
+  border-radius: 5px;
+}
+.c-primary {
+  min-height: 52px;
+  font-size: 14px;
+  box-shadow: 0 8px 18px rgba(223, 189, 123, 0.12);
+}
+.c-form-grid {
+  gap: 16px;
+}
+.c-form-grid .c-field-hint {
+  min-height: 64px;
+  margin-top: 10px;
+  padding: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.c-wallet-balances {
+  padding: 12px 14px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.c-wallet-balances > b {
+  font-size: 12px;
+}
+
+.c-position {
+  background:
+    linear-gradient(145deg, rgba(223, 189, 123, 0.035), transparent 38%),
+    var(--c-panel);
+}
+.c-position h2 {
+  font-size: 38px;
+}
+.c-position dl > div {
+  padding: 18px 0;
+}
+.c-position dt,
+.c-position dd {
+  font-size: 12px;
+}
+.c-manager-numbers strong {
+  font-size: clamp(18px, 1.7vw, 26px);
+}
+.c-danger-band,
+.c-manager-numbers p,
+.c-bond-label,
+.c-coverage > p {
+  font-size: 11px;
+}
+
+.c-logbook li {
+  padding: 22px 0;
+}
+.c-logbook li h3 {
+  font-size: 18px;
+}
+.c-logbook li p,
+.c-logbook li > div > span,
+.c-log-value time {
+  font-size: 12px;
+}
+.c-log-value > strong {
+  font-size: 20px;
+}
+
+.c-net-tools summary {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+}
+.c-net-panel {
+  width: min(340px, calc(100vw - 32px));
+  padding: 18px;
+  border-radius: 8px;
+  background: #112d3d;
+  box-shadow: 0 18px 50px rgba(3, 12, 18, 0.55);
+}
+.c-net-status span,
+.c-net-status b,
+.c-net-balances dt,
+.c-net-balances dd,
+.c-net-panel p,
+.c-net-panel a {
+  font-size: 11px;
+  line-height: 1.5;
+}
+.c-net-balances dd {
+  font-size: 12px;
+}
+
+.c-footer {
+  align-items: center;
+  padding-top: 24px;
+  margin-top: 48px;
+}
+.c-footer p {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+@media (max-width: 1200px) {
+  .c-sidebar {
+    width: 220px;
+  }
+  .c-body {
+    margin-left: 220px;
+  }
+  .c-main {
+    padding-inline: 24px;
+  }
+}
+
+@media (max-width: 850px) {
+  .c-sidebar {
+    width: auto;
+    padding: 16px 20px 0;
+  }
+  .c-brand {
+    display: inline-flex;
+    align-items: center;
+  }
+  .c-brand-sub {
+    display: inline;
+    margin: 0 0 0 12px;
+  }
+  .c-sidebar nav {
+    margin: 14px 0 0;
+  }
+  .c-sidebar nav > a {
+    min-height: 44px;
+  }
+  .c-body {
+    margin-left: 0;
+  }
+  .c-header {
+    min-height: 68px;
+  }
+  .c-main {
+    padding: 24px 20px 40px;
+  }
+}
+
+@media (max-width: 600px) {
+  .c-sidebar {
+    padding: 14px 16px 0;
+  }
+  .c-brand {
+    font-size: 24px;
+  }
+  .c-monogram {
+    width: 30px;
+    height: 32px;
+  }
+  .c-brand-sub {
+    font-size: 11px;
+  }
+  .c-sidebar nav {
+    gap: 14px;
+  }
+  .c-sidebar nav > a {
+    min-height: 42px;
+    font-size: 12px;
+  }
+  .c-header {
+    padding: 12px 16px;
+  }
+  .c-header > p {
+    font-size: 11px;
+  }
+  .c-header button {
+    min-height: 44px;
+  }
+  .c-main {
+    padding: 22px 16px 36px;
+  }
+  .c-heading h1 {
+    font-size: 32px;
+  }
+  .c-heading {
+    margin-bottom: 22px;
+  }
+  .c-overview-instruments,
+  .c-position,
+  .c-transfer,
+  .c-bid-form,
+  .c-coverage,
+  .c-bond-ops,
+  .c-manager-numbers,
+  .c-range,
+  .c-takeover,
+  .c-state {
+    border-radius: 6px;
+  }
+  .c-capital,
+  .c-surveillance,
+  .c-position,
+  .c-transfer,
+  .c-bid-form,
+  .c-coverage,
+  .c-bond-ops,
+  .c-range {
+    padding: 20px 16px;
+  }
+  .c-capital > strong {
+    font-size: 36px;
+  }
+  .c-gauge-row {
+    margin: 24px 0;
+  }
+  .c-gauge-row > div {
+    flex-basis: 100%;
+  }
+  .c-panel-heading {
+    align-items: flex-start;
+  }
+  .c-panel-heading > span {
+    max-width: 150px;
+    text-align: right;
+  }
+  .c-contract {
+    padding: 28px 0;
+  }
+  .c-contract li {
+    align-items: flex-start;
+  }
+  .nautical th,
+  .nautical td {
+    font-size: 12px;
+  }
+  .nautical th {
+    font-size: 11px;
+  }
+  .c-takeover {
+    gap: 16px;
+  }
+  .c-takeover p {
+    font-size: 12px;
+  }
+  .c-takeover-actions button {
+    min-height: 44px;
+  }
+  .c-form-grid {
+    gap: 12px;
+  }
+  .c-form-grid .c-field-hint {
+    min-height: 0;
+  }
+  .c-manager-numbers strong {
+    font-size: 17px;
+  }
+  .c-logbook li {
+    grid-template-columns: 28px 1fr;
+  }
+  .c-log-value {
+    grid-column: 2;
+  }
+  .c-logbook li h3 {
+    font-size: 16px;
+  }
+  .c-net-panel {
+    width: min(320px, calc(100vw - 32px));
+  }
+  .c-footer {
+    gap: 10px;
+  }
+}
