@@ -30,7 +30,8 @@ contract Deploy is Script {
         address pmAddr = vm.envOr("POOL_MANAGER", address(0));
 
         vm.startBroadcast();
-        address me = msg.sender;
+        // with --account, msg.sender is Foundry's placeholder; ask who is actually broadcasting
+        (, address me,) = vm.readCallers();
         IPoolManager pm = pmAddr == address(0) ? IPoolManager(address(new PoolManager(me))) : IPoolManager(pmAddr);
 
         MockERC20 usdc = new MockERC20("Charter test USDC", "tUSDC", 6);

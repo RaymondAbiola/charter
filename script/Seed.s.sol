@@ -40,7 +40,8 @@ contract Seed is Script {
         key = PoolKey(c0, c1, LPFeeLibrary.DYNAMIC_FEE_FLAG, SPACING, IHooks(address(charter)));
 
         vm.startBroadcast();
-        address me = msg.sender;
+        // with --account, msg.sender is Foundry's placeholder; ask who is actually broadcasting
+        (, address me,) = vm.readCallers();
         MockERC20 t0 = MockERC20(Currency.unwrap(c0));
         MockERC20 t1 = MockERC20(Currency.unwrap(c1));
         t0.mint(me, 10 ** (t0.decimals() + 9));
