@@ -64,6 +64,18 @@ export async function connected(): Promise<Address | null> {
   return account ?? null;
 }
 
+/** Asks the wallet to drop this site's access. Wallets without the method just ignore it. */
+export async function revoke() {
+  try {
+    await window.ethereum?.request({
+      method: "wallet_revokePermissions",
+      params: [{ eth_accounts: {} }],
+    } as never);
+  } catch {
+    // older wallets: the app forgets the account anyway
+  }
+}
+
 const messages: Record<string, string> = {
   Slippage: "The price moved past your slippage limit. Try again or raise it.",
   ZeroShares: "Enter an amount above zero.",

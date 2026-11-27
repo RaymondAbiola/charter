@@ -115,6 +115,7 @@ Its wallet refuses every transaction, so it cannot spend anything.
 10. rebalance
 11. top up the bond
 12. exit
+13. disconnect, reload to confirm it stays disconnected, then reconnect
 
 It needs Foundry's `anvil` on the path. Nothing it does reaches the real chain.
 

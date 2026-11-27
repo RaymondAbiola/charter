@@ -51,7 +51,8 @@ const pages: [Screen, string, string][] = [
   ["activity", "Logbook", "05"],
 ];
 export function Charter({ screen }: { screen: Screen }) {
-  const { status, account, connect, connectError, data, refresh } = useChain();
+  const { status, account, connect, disconnect, connectError, data, refresh } =
+    useChain();
   return (
     <div className="nautical">
       <a className="c-skip" href="#charter-main">
@@ -109,6 +110,14 @@ export function Charter({ screen }: { screen: Screen }) {
             {account ? address(account) : "Connect wallet"}{" "}
             <span aria-hidden="true">↗</span>
           </button>
+          {account && (
+            <button
+              className="c-text-button c-disconnect"
+              onClick={() => void disconnect()}
+            >
+              Disconnect
+            </button>
+          )}
         </header>
         <main id="charter-main" className="c-main">
           <div className="c-heading">

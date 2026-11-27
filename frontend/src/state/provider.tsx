@@ -14,6 +14,7 @@ import {
   connect as connectWallet,
   connected,
   createWriter,
+  revoke,
 } from "@/chain/wallet";
 import type { Address, Snapshot } from "@/chain/types";
 
@@ -27,11 +28,29 @@ interface State {
   account: Address | null;
   now: number;
   connect: () => Promise<void>;
+  disconnect: () => Promise<void>;
   connectError: string;
   refresh: () => Promise<void>;
 }
 
 const POLL_MS = 6000;
+// set when the visitor disconnects, so a reload does not quietly reconnect them
+const LEFT = "charter:disconnected";
+const remember = (left: boolean) => {
+  try {
+    if (left) localStorage.setItem(LEFT, "1");
+    else localStorage.removeItem(LEFT);
+  } catch {
+    // private mode or blocked storage: the choice lasts for this page only
+  }
+};
+const hasLeft = () => {
+  try {
+    return localStorage.getItem(LEFT) === "1";
+  } catch {
+    return false;
+  }
+};
 const Context = createContext<State | null>(null);
 
 export function ChainProvider({ children }: { children: ReactNode }) {
@@ -77,12 +96,15 @@ export function ChainProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const clock = setInterval(() => setNow(Date.now() + skew.current), 1000);
     const poll = setInterval(() => void refresh(), POLL_MS);
-    void connected()
+    void (hasLeft() ? Promise.resolve(null) : connected())
       .then((a) => select(a))
       .catch(() => select(null));
     const eth = window.ethereum;
-    const onAccounts = (accounts: unknown) =>
-      select(((accounts as Address[])[0] ?? null) as Address | null);
+    const onAccounts = (accounts: unknown) => {
+      const next = ((accounts as Address[])[0] ?? null) as Address | null;
+      if (next && hasLeft()) return;
+      select(next);
+    };
     eth?.on?.("accountsChanged", onAccounts);
     return () => {
       clearInterval(clock);
@@ -94,12 +116,21 @@ export function ChainProvider({ children }: { children: ReactNode }) {
   const connect = async () => {
     setConnectError("");
     try {
-      select(await connectWallet());
+      const next = await connectWallet();
+      remember(false);
+      select(next);
     } catch (error) {
       setConnectError(
         error instanceof Error ? error.message : "The wallet did not connect.",
       );
     }
+  };
+
+  const disconnect = async () => {
+    setConnectError("");
+    remember(true);
+    select(null);
+    await revoke();
   };
 
   return (
@@ -112,6 +143,7 @@ export function ChainProvider({ children }: { children: ReactNode }) {
         account,
         now,
         connect,
+        disconnect,
         connectError,
         refresh: () => refresh(),
       }}

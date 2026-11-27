@@ -215,6 +215,23 @@ try {
     await waitText(page, /Lease ended|Bond coverage/);
   });
 
+  await step(
+    "disconnect sticks across a reload, and connect brings it back",
+    async () => {
+      await click(page, "Disconnect");
+      await waitText(page, /Connect wallet/i, { errors: false });
+      await page.reload({ waitUntil: "networkidle0" });
+      await loaded(page);
+      await new Promise((r) => setTimeout(r, 2000));
+      assert.ok(
+        !/0x0000…c4a7/i.test(await bodyText(page)),
+        "still disconnected after a reload",
+      );
+      await click(page, "Connect wallet");
+      await waitText(page, /0x0000…c4a7/i);
+    },
+  );
+
   await page.screenshot({ path: join(output, "e2e-end.png"), fullPage: true });
   assert.deepEqual(errors, [], "no uncaught page errors");
   console.log(`Passed ${passed.length} write checks on the fork.`);

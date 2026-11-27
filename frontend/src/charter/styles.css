@@ -1489,3 +1489,13 @@
 .c-net-panel a:hover {
   border-bottom-color: var(--c-brass);
 }
+
+.c-header .c-disconnect {
+  margin-left: -8px;
+  min-height: 40px;
+}
+@media (max-width: 1200px) {
+  .c-header .c-disconnect {
+    margin-left: 0;
+  }
+}
