@@ -12,6 +12,11 @@
     14px/1.6 var(--font-instrument),
     sans-serif;
   font-variant-numeric: tabular-nums;
+  --t-eyebrow: 11px;
+  --t-label: 12px;
+  --t-body: 14px;
+  --t-caption: 12px;
+  --t-chart: 12px;
 }
 .nautical a {
   text-decoration: none;
@@ -112,7 +117,7 @@
 }
 .c-brand-sub {
   display: block;
-  font-size: 10px;
+  font-size: var(--t-eyebrow);
   font-weight: 400;
   color: var(--c-muted);
   letter-spacing: 0.04em;
@@ -239,7 +244,7 @@
   gap: 24px;
 }
 .c-eyebrow {
-  font: 9px/1.5 var(--font-mono) !important;
+  font: var(--t-eyebrow)/1.5 var(--font-mono) !important;
   letter-spacing: 0.13em;
   color: var(--c-muted);
   margin-bottom: 12px !important;
@@ -590,7 +595,7 @@
 }
 .c-contract-note > span {
   color: var(--c-brass);
-  font: 9px var(--font-mono);
+  font: var(--t-eyebrow) var(--font-mono);
 }
 .c-contract-note > p {
   color: var(--c-muted);
@@ -633,7 +638,7 @@
   display: flex;
   justify-content: space-between;
   color: var(--c-muted);
-  font-size: 8px;
+  font-size: var(--t-eyebrow);
 }
 .c-token-preview > p > span {
   color: var(--c-brass);
@@ -807,7 +812,7 @@
   font-size: 8px;
 }
 .c-coverage > p {
-  font-size: 10px;
+  font-size: var(--t-caption);
   color: var(--c-muted);
   margin: 20px 0 0;
   text-align: center;
@@ -855,7 +860,7 @@
   border-block: 1px solid #7b695e;
   padding: 16px 0;
   margin-top: 24px;
-  font: 10px var(--font-mono);
+  font: var(--t-caption) var(--font-mono);
 }
 .c-bond-ops {
   padding: 24px;
@@ -1232,10 +1237,10 @@
     gap: 12px;
   }
   .c-takeover p {
-    font-size: 10px;
+    font-size: var(--t-caption);
   }
   .c-takeover .c-eyebrow {
-    font-size: 8px !important;
+    font-size: var(--t-eyebrow) !important;
   }
   .c-takeover strong {
     font-size: 26px;
@@ -1498,4 +1503,177 @@
   .c-header .c-disconnect {
     margin-left: 0;
   }
+}
+.nautical label,
+.c-range-bounds label,
+.c-position dt,
+.c-check {
+  font-size: var(--t-label);
+}
+
+.nautical .c-eyebrow,
+.nautical .c-heading > span,
+.nautical .c-panel-heading > span,
+.nautical .c-pool p,
+.nautical .c-pool small,
+.nautical .c-sidebar-foot,
+.nautical .c-header > span,
+.nautical .c-header > p > b,
+.nautical .c-sidebar nav > a > span,
+.nautical .c-small-stats p,
+.nautical .c-split-labels,
+.nautical .c-contract li > span,
+.nautical .c-manager-numbers p,
+.nautical .c-bond-label,
+.nautical .c-gauge figcaption,
+.nautical .c-gauge-row > div > p,
+.nautical .c-log-number,
+.nautical .c-takeover small,
+.nautical .c-takeover .c-eyebrow,
+.nautical .c-net-status span,
+.nautical .c-net-status b,
+.nautical .c-net-balances dt,
+.nautical .c-net-balances dd,
+.nautical .c-net-tools,
+.nautical .c-net-panel,
+.nautical .c-footer,
+.nautical .c-footer > span {
+  font-size: var(--t-eyebrow);
+  letter-spacing: 0.04em;
+}
+
+.nautical .c-eyebrow {
+  line-height: 1.5;
+}
+
+.nautical small,
+.nautical .c-small,
+.nautical .c-error,
+.nautical .c-feedback,
+.nautical .c-source,
+.nautical .c-research figcaption,
+.nautical .c-research figcaption p,
+.nautical .c-contract li p,
+.nautical .c-logbook li p,
+.nautical .c-log-value time,
+.nautical .c-field-hint,
+.nautical .c-wallet-balances,
+.nautical .c-sidebar-foot p,
+.nautical .c-takeover-hint {
+  font-size: var(--t-caption);
+}
+
+.nautical th,
+.nautical td,
+.nautical .nautical td,
+.nautical .c-logbook li > div > span,
+.nautical .c-range-bounds b,
+.nautical .c-position dd,
+.nautical .c-manager-numbers strong,
+.nautical .c-capital-split b,
+.nautical .c-wallet-balances > b {
+  font-size: var(--t-body);
+}
+
+.nautical th {
+  font-size: var(--t-label);
+}
+
+.nautical input,
+.nautical select,
+.nautical button,
+.nautical .c-header button,
+.nautical .c-takeover p,
+.nautical .c-takeover-actions button,
+.nautical .c-empty,
+.nautical .c-research-note,
+.nautical .c-position > p,
+.nautical .c-bond-label,
+.nautical .c-surveillance > a {
+  font-size: var(--t-body);
+}
+
+.nautical .c-takeover small,
+.nautical .c-takeover-hint,
+.nautical .c-field-hint,
+.nautical .c-net-status span,
+.nautical .c-net-status b,
+.nautical .c-net-balances dt,
+.nautical .c-net-balances dd,
+.nautical .c-footer,
+.nautical .c-footer > span {
+  line-height: 1.5;
+}
+
+.nautical .c-form-grid .c-field-hint {
+  min-height: 56px;
+  font-size: var(--t-caption);
+}
+
+.nautical .c-net-tools summary {
+  font-size: var(--t-label);
+}
+
+.nautical .c-net-panel p,
+.nautical .c-net-panel a {
+  font-size: var(--t-caption);
+}
+
+.nautical .c-net-status {
+  align-items: flex-start;
+}
+
+@media (max-width: 850px) {
+  .nautical .c-brand-sub,
+  .nautical .c-sidebar nav > a,
+  .nautical .c-sidebar nav > a > span,
+  .nautical .c-header > p,
+  .nautical .c-header button,
+  .nautical .c-takeover p,
+  .nautical .c-takeover small,
+  .nautical .c-panel-heading > span,
+  .nautical .c-gauge figcaption,
+  .nautical .c-range-bounds label {
+    font-size: var(--t-caption);
+  }
+}
+
+@media (max-width: 600px) {
+  .nautical .c-header > p,
+  .nautical .c-header button,
+  .nautical .c-brand-sub,
+  .nautical .c-heading > span,
+  .nautical .c-panel-heading > span,
+  .nautical .c-gauge-row > div > p,
+  .nautical .c-gauge figcaption,
+  .nautical .c-bond-label,
+  .nautical .c-takeover .c-eyebrow,
+  .nautical .c-takeover small,
+  .nautical .c-takeover-hint,
+  .nautical .c-range-bounds label,
+  .nautical .c-research figcaption,
+  .nautical .c-research figcaption p,
+  .nautical .c-manager-numbers p,
+  .nautical .c-log-number,
+  .nautical .c-log-value time,
+  .nautical .c-footer,
+  .nautical .c-footer > span,
+  .nautical .c-net-status span,
+  .nautical .c-net-status b,
+  .nautical .c-net-balances dt,
+  .nautical .c-net-balances dd {
+    font-size: var(--t-caption);
+  }
+}
+
+/* gauges keep a readable scale: wrap to a new row rather than shrink below 200px */
+.c-gauge-row {
+  flex-wrap: wrap;
+}
+.c-gauge-row > div {
+  flex: 1 1 200px;
+}
+.c-gauge {
+  max-width: 300px;
+  margin-inline: auto;
 }

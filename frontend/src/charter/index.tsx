@@ -233,7 +233,7 @@ function Gauge({ ratio, label }: { ratio: number; label: string }) {
           y="128"
           textAnchor="middle"
           fill="#a8b6bf"
-          fontSize="9"
+          fontSize="14"
           letterSpacing="1"
         >
           EQUITY / OWED
@@ -367,7 +367,7 @@ function Overview() {
                     domain={[-16, 16]}
                     ticks={[-15, -10, -5, 0, 5, 10, 15]}
                     tickFormatter={(v) => `${v}%`}
-                    tick={{ fill: "#b6c2c8", fontSize: 10 }}
+                    tick={{ fill: "#b6c2c8", fontSize: 12 }}
                     axisLine={false}
                     tickLine={false}
                   />
@@ -380,7 +380,7 @@ function Overview() {
                     tickFormatter={(n) =>
                       ["Charm Alpha", "G-UNI", "0x381e", "0x5763"][n - 1]
                     }
-                    tick={{ fill: "#c8d2d5", fontSize: 10 }}
+                    tick={{ fill: "#c8d2d5", fontSize: 12 }}
                     width={78}
                     axisLine={false}
                     tickLine={false}
@@ -511,7 +511,7 @@ function Range({
               type="number"
               domain={[lo, hi]}
               tickFormatter={(v) => Math.round(v).toLocaleString("en-US")}
-              tick={{ fill: "#c8d2d5", fontSize: 10 }}
+              tick={{ fill: "#c8d2d5", fontSize: 12 }}
               tickLine={false}
               axisLine={false}
             />
@@ -539,7 +539,7 @@ function Range({
               label={{
                 value: "SPOT",
                 fill: "#f2e6d0",
-                fontSize: 9,
+                fontSize: 12,
                 position: "insideTopRight",
               }}
             />
