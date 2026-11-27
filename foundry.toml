@@ -25,3 +25,6 @@ depth = 64
 [rpc_endpoints]
 unichain_sepolia = "https://sepolia.unichain.org"
 mainnet = "${MAINNET_RPC_URL}"
+
+[etherscan]
+unichain_sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 1301 }

@@ -307,40 +307,57 @@ library LeaseLogic {
     /// the lease, a poorer one is topped up from the bond.
     function _shrink(Book storage b, Lease storage l, Env memory env, uint256 slot, uint128 du, uint160 sv) private {
         _chargeRent(b, l, slot, _unitsValue(env, l.units, sv));
+        (uint256 s0, uint256 s1) = _takeSlice(b, l, env, slot, du);
+        (uint256 o0, uint256 o1) = Positions.fullRangeAmounts(env, sv, du, true);
+        (uint256 f0, uint256 f1) = LeaseMath.feeDebt(b, l);
+        o0 += FullMath.mulDivRoundingUp(f0, du, l.units);
+        o1 += FullMath.mulDivRoundingUp(f1, du, l.units);
+        _settleSlice(b, l, slot, du, s0, s1, Positions.valueAt(o0, o1, sv), sv);
+    }
+
+    /// @dev Sweeps the position's fees into the loose balance, then pulls `du / units` of the
+    /// liquidity. The slice is that fraction of the loose balance plus what the liquidity returned.
+    function _takeSlice(Book storage b, Lease storage l, Env memory env, uint256 slot, uint128 du)
+        private
+        returns (uint256 s0, uint256 s1)
+    {
         bytes32 salt = Positions.leaseSalt(slot);
         if (l.liquidity > 0) {
             BalanceDelta f = Positions.modify(env, salt, l.tickLower, l.tickUpper, 0);
             Positions.credit(b, l, env, uint128(f.amount0()), uint128(f.amount1()));
         }
-        uint128 units = l.units;
-        uint256 s0 = FullMath.mulDiv(l.held0, du, units);
-        uint256 s1 = FullMath.mulDiv(l.held1, du, units);
-        uint128 dl = uint128(FullMath.mulDiv(l.liquidity, du, units));
-        if (dl > 0) {
-            BalanceDelta d = Positions.modify(env, salt, l.tickLower, l.tickUpper, -int256(uint256(dl)));
-            Positions.credit(b, l, env, uint128(d.amount0()), uint128(d.amount1()));
-            s0 += uint128(d.amount0());
-            s1 += uint128(d.amount1());
-            l.liquidity -= dl;
-            b.managedLiquidity -= dl;
-        }
+        s0 = FullMath.mulDiv(l.held0, du, l.units);
+        s1 = FullMath.mulDiv(l.held1, du, l.units);
+        uint128 dl = uint128(FullMath.mulDiv(l.liquidity, du, l.units));
+        if (dl == 0) return (s0, s1);
+        BalanceDelta d = Positions.modify(env, salt, l.tickLower, l.tickUpper, -int256(uint256(dl)));
+        Positions.credit(b, l, env, uint128(d.amount0()), uint128(d.amount1()));
+        s0 += uint128(d.amount0());
+        s1 += uint128(d.amount1());
+        l.liquidity -= dl;
+        b.managedLiquidity -= dl;
+    }
 
-        (uint256 o0, uint256 o1) = Positions.fullRangeAmounts(env, sv, du, true);
-        (uint256 f0, uint256 f1) = LeaseMath.feeDebt(b, l);
-        o0 += FullMath.mulDivRoundingUp(f0, du, units);
-        o1 += FullMath.mulDivRoundingUp(f1, du, units);
-        uint256 owedValue = Positions.valueAt(o0, o1, sv);
+    /// @dev Depositors get what the recalled units owe them. A richer slice leaves the rest with the
+    /// lease; a poorer one is topped up from the bond.
+    function _settleSlice(
+        Book storage b,
+        Lease storage l,
+        uint256 slot,
+        uint128 du,
+        uint256 s0,
+        uint256 s1,
+        uint256 owedValue,
+        uint160 sv
+    ) private {
         uint256 sliceValue = Positions.valueAt(s0, s1, sv);
-
-        uint256 give0 = s0;
-        uint256 give1 = s1;
         uint256 bondUsed;
         uint256 gap;
         if (sliceValue > owedValue) {
-            give0 = FullMath.mulDivRoundingUp(s0, owedValue, sliceValue);
-            give1 = FullMath.mulDivRoundingUp(s1, owedValue, sliceValue);
-            if (give0 > s0) give0 = s0;
-            if (give1 > s1) give1 = s1;
+            uint256 g0 = FullMath.mulDivRoundingUp(s0, owedValue, sliceValue);
+            uint256 g1 = FullMath.mulDivRoundingUp(s1, owedValue, sliceValue);
+            s0 = g0 < s0 ? g0 : s0;
+            s1 = g1 < s1 ? g1 : s1;
         } else {
             gap = owedValue - sliceValue;
             bondUsed = gap < l.bond ? gap : l.bond;
@@ -351,14 +368,14 @@ library LeaseLogic {
             b.uncovered += gap;
         }
         // held and idle are both claims the hook already holds
-        l.held0 -= give0;
-        l.held1 -= give1;
-        b.totalHeld0 -= give0;
-        b.totalHeld1 -= give1;
-        b.idle0 += give0;
-        b.idle1 += give1;
+        l.held0 -= s0;
+        l.held1 -= s1;
+        b.totalHeld0 -= s0;
+        b.totalHeld1 -= s1;
+        b.idle0 += s0;
+        b.idle1 += s1;
         // the fee debt on these units is paid by the slice, so it leaves with them
-        l.units = units - du;
+        l.units -= du;
         b.leasedUnits -= du;
         emit LeaseRecalled(slot, du, owedValue, sliceValue, bondUsed, gap);
     }
