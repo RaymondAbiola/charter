@@ -72,6 +72,7 @@ library LeaseLogic {
     event BidVoided(uint256 indexed slot, address indexed bidder);
     event TakenOver(uint256 indexed slot, address indexed from, address indexed to);
     event Repassivated(uint128 liquidity);
+    event BondToppedUp(uint256 indexed slot, uint256 amount);
     event LeaseRecalled(
         uint256 indexed slot, uint128 units, uint256 owedValue, uint256 sliceValue, uint256 bondUsed, uint256 uncovered
     );
@@ -418,6 +419,25 @@ library LeaseLogic {
             r0 += o0;
             r1 += o1;
         }
+    }
+
+    /// @notice Adds token1 to a lease's bond, so a manager can head off a liquidation.
+    function topUpBond(
+        Book storage b,
+        Lease storage l,
+        Guard storage g,
+        Env memory env,
+        uint256 slot,
+        address payer,
+        uint256 amount
+    ) external {
+        env.key.currency1.settle(env.pm, payer, amount, false);
+        env.pm.mint(address(this), env.key.currency1.toId(), amount);
+        l.bond += amount;
+        b.totalBond += amount;
+        // more cushion means a wider safe band, so let the next swap work it out afresh
+        g.validUntil = 0;
+        emit BondToppedUp(slot, amount);
     }
 
     /// @notice Lets a bidder take their escrow back once the bid has been ready to activate but has

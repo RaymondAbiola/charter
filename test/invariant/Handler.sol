@@ -112,6 +112,16 @@ contract Handler is Test {
         } catch {}
     }
 
+    function topUpBond(uint256 slot, uint256 amount) external {
+        slot = bound(slot, 0, 3);
+        address m = charter.lease(slot).manager;
+        if (m == address(0)) return;
+        vm.prank(m);
+        try charter.topUpBond(slot, bound(amount, 1, 50e18)) {
+            _ok(this.topUpBond.selector);
+        } catch {}
+    }
+
     function exitLease(uint256 slot) external {
         slot = bound(slot, 0, 3);
         address m = charter.lease(slot).manager;

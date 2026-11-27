@@ -52,7 +52,8 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         Exit,
         Bid,
         Activate,
-        Cancel
+        Cancel,
+        TopUp
     }
 
     struct Config {
@@ -122,6 +123,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
     error BidTooLow();
     error NoBid();
     error ShareCapExceeded();
+    error ZeroAmount();
 
     event Bound(PoolId indexed id, uint160 sqrtPriceX96);
     event Deposit(address indexed payer, address indexed to, uint256 shares, uint256 amount0, uint256 amount1);
@@ -147,6 +149,7 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         uint256 uncovered
     );
     event Repassivated(uint128 liquidity);
+    event BondToppedUp(uint256 indexed slot, uint256 amount);
     event LeaseRecalled(
         uint256 indexed slot, uint128 units, uint256 owedValue, uint256 sliceValue, uint256 bondUsed, uint256 uncovered
     );
@@ -278,6 +281,13 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
         _unlock(Action.Cancel, abi.encode(slot, msg.sender));
     }
 
+    /// @notice Add token1 to your lease's bond, for more room above the maintenance margin.
+    function topUpBond(uint256 slot, uint256 amount) external {
+        if (_leases[slot].manager != msg.sender) revert NotManager();
+        if (amount == 0) revert ZeroAmount();
+        _unlock(Action.TopUp, abi.encode(slot, msg.sender, amount));
+    }
+
     /// @notice End your lease. It settles like a liquidation: rent first, liquidity pulled, then
     /// depositors take what they are owed at the clamped price and you keep the rest.
     function exitLease(uint256 slot) external {
@@ -359,6 +369,9 @@ contract Charter is BaseHook, IUnlockCallback, ERC20 {
             LeaseLogic.rebalance(_book, _leases[slot], _guards[slot], _env(), _rules(), slot, lo, hi);
         } else if (action == Action.Repassivate) {
             LeaseLogic.repassivate(_book, _env());
+        } else if (action == Action.TopUp) {
+            (uint256 slot, address payer, uint256 amount) = abi.decode(args, (uint256, address, uint256));
+            LeaseLogic.topUpBond(_book, _leases[slot], _guards[slot], _env(), slot, payer, amount);
         } else if (action == Action.Cancel) {
             (uint256 slot, address caller) = abi.decode(args, (uint256, address));
             LeaseLogic.cancelBid(_book, _bids[slot], _env(), slot, caller);
