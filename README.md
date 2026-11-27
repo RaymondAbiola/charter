@@ -6,6 +6,8 @@ Charter is a Uniswap v4 hook that turns active liquidity management into a lease
 
 Depositors get the passive return without having to judge who is skilled. Managers get capital without having to raise it, and keep everything they earn above the benchmark. The bond, not the depositor, carries the manager's risk.
 
+Replayed block by block through Charter's rules, three real mainnet vaults that left their depositors 12 to 14 points behind a passive LP would have left them at passive, with the managers' bonds covering every shortfall.
+
 | | |
 | --- | --- |
 | Live app | [charter-lease.vercel.app](https://charter-lease.vercel.app), reading and writing the deployed contracts |
@@ -14,7 +16,7 @@ Depositors get the passive return without having to judge who is skilled. Manage
 | Contracts | One hook plus four delegatecall libraries, every one under the 24 KB limit |
 | Tests | 130 tests, including 5 invariants, 7 attack scenarios and a twin-pool benchmark; 98.6% line coverage |
 | Frontend | Next.js app wired to the live contracts, with read-only and fork-based browser tests ([`frontend/`](frontend/)) |
-| Evidence | A study of four real mainnet vaults that sets the design ([`analysis/`](analysis/)) |
+| Evidence | A study of four real mainnet vaults that sets the design, and a block-level replay of the same vaults as Charter leases ([`analysis/`](analysis/)) |
 
 ---
 
@@ -36,6 +38,25 @@ Three findings shaped Charter:
 3. **Skill cannot be measured reliably enough to pay on.** Scored hourly over the same 60 days, two vaults were both about +0.2% against passive. Scored weekly, the sign flips. A fee or a firing rule tied to measured performance pays for luck.
 
 So Charter does not try to measure managers. It transfers the risk to them. A manager who takes a range takes its price exposure, its inventory risk and its gains, and owes depositors a benchmark set by full-range capital, which their choice of range cannot shrink.
+
+### The same four vaults, replayed as Charter leases
+
+We replayed each vault's actual holdings as one Charter lease under the hook's settlement rules. The manager runs the vault's real positions with the depositors' capital, owes the full-range result plus rent, and posts the minimum 5% bond, in WETH as the hook requires on these pools. The daily samples show only the day a lease fails, so each failure was narrowed to the exact block from archive state ([`analysis/backtest.py`](analysis/backtest.py)).
+
+| Vault | Depositors, as they were | Depositors, as a Charter lease | Lease closed | Manager's loss |
+| --- | --- | --- | --- | --- |
+| Charm Alpha Vault | -12.3% | Passive | Day 103 | 3.9% of the capital |
+| G-UNI (Arrakis V1) | -14.1% | Passive | Day 118 | 3.7% |
+| `0x381e` | -14.1% | Passive | Day 169 | 4.2% |
+| `0x5763` | +12.9% | Passive | Day 41 | 4.0% |
+
+Returns are against passive, at 0% rent. The first column uses Charter's benchmark, which leaves fees uninvested, so it differs from the study table by up to 0.4 points. At 5% rent, depositors would have ended 0.6 to 2.1 points ahead of passive.
+
+- **The bond covered every shortfall.** Across all 24 cases tested (bonds of 5, 10 and 20%, rent of 0 and 5%), no depositor capital was left uncovered. Checked once a day instead, the same leases would have left up to 2.65% uncovered. Closing a failing lease in the block it fails is what makes the bond enough.
+- **The losing ranges would not have lasted.** To keep running through the whole period, Charm's manager would have needed a bond of 36% of the capital, G-UNI's 63% and `0x381e`'s 15%. Under Charter, the cost of those ranges falls on whoever chose them.
+- **Depositors give up the lucky upside too.** `0x5763` ended ahead by holding mostly USDC through the crash. As a Charter lease with a 20% bond, it is never liquidated and the manager ends 19.8% of the capital ahead while depositors get passive. With the minimum 5% bond, it was closed on day 41, before the gain came. Charter trades the upside of a lucky range for protection from an unlucky one.
+
+This models the hook rather than running it. Passive fees come from the pool's full-range fee growth instead of Charter's in-pool estimator, and the manager follows the vault's real strategy without topping up the bond. Only the days a lease failed were searched block by block, so a breach that recovered within a day is missed. The hook would have closed that lease earlier.
 
 ### The open problem this answers
 
@@ -298,7 +319,7 @@ Without `POOL_MANAGER` set, `Deploy.s.sol` also deploys a fresh PoolManager, whi
 ## Honest limits
 
 - **Rent depends on managers having an edge.** The study found market-making skill close to passive for all four vaults. If no manager can beat the benchmark, nobody bids, and Charter is simply a passive full-range vault. Depositors lose nothing against passive by finding out. Charter is the safe way to learn whether a manager is worth paying, not a promise that one is.
-- **One swap can outrun the bond.** A single swap far past a lease's range can leave a shortfall bigger than its bond. Depositors share it pro rata, because the vault simply holds less, so every share is worth slightly less and no depositor is singled out. The running total is public as `uncovered()`. A test shows it happening rather than pretending it cannot. The bond and the 1% margin absorb ordinary moves; how often a gap outruns them depends on the manager's range and on the market.
+- **One swap can outrun the bond.** A single swap far past a lease's range can leave a shortfall bigger than its bond. Depositors share it pro rata, because the vault simply holds less, so every share is worth slightly less and no depositor is singled out. The running total is public as `uncovered()`. A test shows it happening rather than pretending it cannot. The bond and the 1% margin absorb ordinary moves; how often a gap outruns them depends on the manager's range and on the market. In the block-level replay of the four mainnet vaults, it did not happen once.
 - **The passive benchmark is an estimate.** It sits within a few percent of the truth on the fee part, at the capped share, and leans toward the depositor.
 - **The share cap is checked when a lease is placed, rebalanced or taken over,** not as other LPs come and go. If outside liquidity leaves, a lease can end up above 5% until its next change. In the twin tests, a larger share pushed the estimate's error further toward overcharging the manager, not toward depositors: +5.89% at a 7.9% share and +22.57% at 24.7%. So the cost of a breach falls mainly on the manager, though the tests do not cover every flow at those sizes.
 - **Settlement trusts the block's opening price.** Within a block, valuations are clamped to it. Across blocks, Charter trusts the pool's price like any onchain LP position does, and has no external oracle.
@@ -329,7 +350,7 @@ We searched all 765 entries in the Atrium hook directory, as listed in November 
 | [`test/`](test/) | Unit, fuzz, twin-pool, attack, gas and invariant suites |
 | [`script/`](script/) | Deploy, seed, and move the price |
 | [`deployments/1301.json`](deployments/1301.json) | Unichain Sepolia addresses |
-| [`analysis/`](analysis/) | The mainnet vault study, in Python with only the standard library |
+| [`analysis/`](analysis/) | The mainnet vault study and the Charter replay, in Python with only the standard library |
 | [`frontend/`](frontend/) | The app |
 
 Built with Foundry (solc 0.8.26, via-IR), Uniswap v4-core, v4-periphery and OpenZeppelin's uniswap-hooks.

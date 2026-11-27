@@ -1,0 +1,590 @@
+{
+ "charm-30": {
+  "vault": "0x9bf7b46c7ad5ab62034e9349ab912c0345164322",
+  "days": 555,
+  "eth_start": 3256.500459628894,
+  "eth_end": 1650.9552205480727,
+  "vault_vs_passive": -0.12338672002383211,
+  "bond_needed": {
+   "0.00": 0.36212332638798106,
+   "0.05": 0.4108167932233372
+  },
+  "leases": {
+   "bond 0.05 rent 0.00": {
+    "liquidated_day": 102.75,
+    "liquidated_block": 14739795,
+    "checked_after": 14739794,
+    "eth_then": 2464.828803512427,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.778945885379694,
+    "manager_pnl_pct": -0.0389472942689847
+   },
+   "bond 0.05 rent 0.05": {
+    "liquidated_day": 101.71,
+    "liquidated_block": 14732297,
+    "checked_after": 14732296,
+    "eth_then": 2625.3646522066256,
+    "depositor_vs_passive": 0.012965969379232573,
+    "rent_pct": 0.012965969379232573,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.7932815601140798,
+    "manager_pnl_pct": -0.03966407800570399
+   },
+   "bond 0.10 rent 0.00": {
+    "liquidated_day": 105.11,
+    "liquidated_block": 14756782,
+    "checked_after": 14756781,
+    "eth_then": 2109.3099130812784,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.8928671674824401,
+    "manager_pnl_pct": -0.08928671674824401
+   },
+   "bond 0.10 rent 0.05": {
+    "liquidated_day": 105.02,
+    "liquidated_block": 14756146,
+    "checked_after": 14756145,
+    "eth_then": 2194.3986203610866,
+    "depositor_vs_passive": 0.012244214366982023,
+    "rent_pct": 0.012244214366982023,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.8844627802091695,
+    "manager_pnl_pct": -0.0884462780209169
+   },
+   "bond 0.20 rent 0.00": {
+    "liquidated_day": 133.2,
+    "liquidated_block": 14959038,
+    "checked_after": 14959037,
+    "eth_then": 1183.4694394367898,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.9169713639855062,
+    "manager_pnl_pct": -0.18339427279710124
+   },
+   "bond 0.20 rent 0.05": {
+    "liquidated_day": 133.11,
+    "liquidated_block": 14958402,
+    "checked_after": 14958401,
+    "eth_then": 1219.7805843069634,
+    "depositor_vs_passive": 0.011980810527985386,
+    "rent_pct": 0.011980810527985386,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.9174365885262581,
+    "manager_pnl_pct": -0.18348731770525176
+   }
+  },
+  "leases_checked_daily": {
+   "bond 0.05 rent 0.00": {
+    "liquidated_day": 103.0,
+    "liquidated_block": 14741600,
+    "checked_after": 14734400,
+    "eth_then": 2461.0415290025867,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.7888595938741095,
+    "manager_pnl_pct": -0.03944297969370548
+   },
+   "bond 0.05 rent 0.05": {
+    "liquidated_day": 102.0,
+    "liquidated_block": 14734400,
+    "checked_after": 14727200,
+    "eth_then": 2538.1803961787978,
+    "depositor_vs_passive": 0.012788683353035244,
+    "rent_pct": 0.012788683353035244,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.9390090035237512,
+    "manager_pnl_pct": -0.04695045017618755
+   },
+   "bond 0.10 rent 0.00": {
+    "liquidated_day": 106.0,
+    "liquidated_block": 14763200,
+    "checked_after": 14756000,
+    "eth_then": 1935.0772359041766,
+    "depositor_vs_passive": -0.00570463271850914,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.00570463271850914,
+    "bond_used_pct": 1.0,
+    "manager_pnl_pct": -0.1
+   },
+   "bond 0.10 rent 0.05": {
+    "liquidated_day": 106.0,
+    "liquidated_block": 14763200,
+    "checked_after": 14756000,
+    "eth_then": 1935.0772359041766,
+    "depositor_vs_passive": -0.00570463271850921,
+    "rent_pct": 0.011588981013293247,
+    "uncovered_pct": 0.017293613731802458,
+    "bond_used_pct": 1.0,
+    "manager_pnl_pct": -0.0999999999999999
+   },
+   "bond 0.20 rent 0.00": {
+    "liquidated_day": 136.0,
+    "liquidated_block": 14979200,
+    "checked_after": 14972000,
+    "eth_then": 1090.8832080870852,
+    "depositor_vs_passive": -0.00809539415792587,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.00809539415792587,
+    "bond_used_pct": 1.0,
+    "manager_pnl_pct": -0.2
+   },
+   "bond 0.20 rent 0.05": {
+    "liquidated_day": 134.0,
+    "liquidated_block": 14964800,
+    "checked_after": 14957600,
+    "eth_then": 1191.8853317216126,
+    "depositor_vs_passive": 0.01193383006115882,
+    "rent_pct": 0.01193383006115882,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.9631415944893972,
+    "manager_pnl_pct": -0.19262831889787937
+   }
+  }
+ },
+ "guni-5": {
+  "vault": "0xa6c49fd13e50a30c65e6c8480aada132011d0613",
+  "days": 555,
+  "eth_start": 3250.0984310167746,
+  "eth_end": 1652.232805460764,
+  "vault_vs_passive": -0.1410312193992509,
+  "bond_needed": {
+   "0.00": 0.6282320552716466,
+   "0.05": 0.6495675879711038
+  },
+  "leases": {
+   "bond 0.05 rent 0.00": {
+    "liquidated_day": 117.63,
+    "liquidated_block": 14846951,
+    "checked_after": 14846950,
+    "eth_then": 1863.5323773990212,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.744656601480366,
+    "manager_pnl_pct": -0.03723283007401831
+   },
+   "bond 0.05 rent 0.05": {
+    "liquidated_day": 117.63,
+    "liquidated_block": 14846912,
+    "checked_after": 14846911,
+    "eth_then": 1914.0583646589175,
+    "depositor_vs_passive": 0.013080301807151737,
+    "rent_pct": 0.013080301807151737,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.7337077933462977,
+    "manager_pnl_pct": -0.03668538966731481
+   },
+   "bond 0.10 rent 0.00": {
+    "liquidated_day": 118.8,
+    "liquidated_block": 14855371,
+    "checked_after": 14855370,
+    "eth_then": 1732.3576710855457,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.8891063385084899,
+    "manager_pnl_pct": -0.08891063385084899
+   },
+   "bond 0.10 rent 0.05": {
+    "liquidated_day": 118.21,
+    "liquidated_block": 14851096,
+    "checked_after": 14851095,
+    "eth_then": 1780.9779706284814,
+    "depositor_vs_passive": 0.012685772122402692,
+    "rent_pct": 0.012685772122402692,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.8663376104202062,
+    "manager_pnl_pct": -0.08663376104202072
+   },
+   "bond 0.20 rent 0.00": {
+    "liquidated_day": 131.23,
+    "liquidated_block": 14944885,
+    "checked_after": 14944884,
+    "eth_then": 1524.7787289871828,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.92957578391766,
+    "manager_pnl_pct": -0.18591515678353204
+   },
+   "bond 0.20 rent 0.05": {
+    "liquidated_day": 131.15,
+    "liquidated_block": 14944261,
+    "checked_after": 14944260,
+    "eth_then": 1566.705427737619,
+    "depositor_vs_passive": 0.013455451425946254,
+    "rent_pct": 0.013455451425946254,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.9272063622821016,
+    "manager_pnl_pct": -0.1854412724564203
+   }
+  },
+  "leases_checked_daily": {
+   "bond 0.05 rent 0.00": {
+    "liquidated_day": 118.0,
+    "liquidated_block": 14849600,
+    "checked_after": 14842400,
+    "eth_then": 1861.5394182403047,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.7682920227716412,
+    "manager_pnl_pct": -0.03841460113858206
+   },
+   "bond 0.05 rent 0.05": {
+    "liquidated_day": 118.0,
+    "liquidated_block": 14849600,
+    "checked_after": 14842400,
+    "eth_then": 1861.5394182403047,
+    "depositor_vs_passive": 0.008531961146755912,
+    "rent_pct": 0.012946115168233758,
+    "uncovered_pct": 0.004414154021477845,
+    "bond_used_pct": 1.0,
+    "manager_pnl_pct": -0.04999999999999995
+   },
+   "bond 0.10 rent 0.00": {
+    "liquidated_day": 131.0,
+    "liquidated_block": 14943200,
+    "checked_after": 14936000,
+    "eth_then": 1662.2045617898193,
+    "depositor_vs_passive": -0.015163402602145468,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.015163402602145468,
+    "bond_used_pct": 1.0,
+    "manager_pnl_pct": -0.1
+   },
+   "bond 0.10 rent 0.05": {
+    "liquidated_day": 119.0,
+    "liquidated_block": 14856800,
+    "checked_after": 14849600,
+    "eth_then": 1749.8975080967218,
+    "depositor_vs_passive": 0.012676294490971214,
+    "rent_pct": 0.012676294490971214,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.9969672752398437,
+    "manager_pnl_pct": -0.09969672752398429
+   },
+   "bond 0.20 rent 0.00": {
+    "liquidated_day": 132.0,
+    "liquidated_block": 14950400,
+    "checked_after": 14943200,
+    "eth_then": 1458.447844630955,
+    "depositor_vs_passive": -0.013430705320115833,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.013430705320115833,
+    "bond_used_pct": 1.0,
+    "manager_pnl_pct": -0.2
+   },
+   "bond 0.20 rent 0.05": {
+    "liquidated_day": 132.0,
+    "liquidated_block": 14950400,
+    "checked_after": 14943200,
+    "eth_then": 1458.447844630955,
+    "depositor_vs_passive": -0.013430705320115834,
+    "rent_pct": 0.013089789150245664,
+    "uncovered_pct": 0.0265204944703615,
+    "bond_used_pct": 1.0,
+    "manager_pnl_pct": -0.2
+   }
+  }
+ },
+ "vault381e-5": {
+  "vault": "0x381e7287eb6df7c74b52661f91b1b02269144198",
+  "days": 472,
+  "eth_start": 1650.1437926490935,
+  "eth_end": 3912.1272685305285,
+  "vault_vs_passive": -0.14113999098124086,
+  "bond_needed": {
+   "0.00": 0.15008742928031543,
+   "0.05": 0.17413078495861786
+  },
+  "leases": {
+   "bond 0.05 rent 0.00": {
+    "liquidated_day": 168.67,
+    "liquidated_block": 19214458,
+    "checked_after": 19214457,
+    "eth_then": 2640.555496324387,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.8426799762790931,
+    "manager_pnl_pct": -0.04213399881395466
+   },
+   "bond 0.05 rent 0.05": {
+    "liquidated_day": 135.91,
+    "liquidated_block": 18978557,
+    "checked_after": 18978556,
+    "eth_then": 2447.6117371237438,
+    "depositor_vs_passive": 0.021100989829130775,
+    "rent_pct": 0.021100989829130775,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.8368471732824787,
+    "manager_pnl_pct": -0.041842358664123926
+   },
+   "bond 0.10 rent 0.00": {
+    "liquidated_day": 183.05,
+    "liquidated_block": 19317975,
+    "checked_after": 19317974,
+    "eth_then": 3244.9735478704383,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.9277891080135495,
+    "manager_pnl_pct": -0.09277891080135496
+   },
+   "bond 0.10 rent 0.05": {
+    "liquidated_day": 180.39,
+    "liquidated_block": 19298816,
+    "checked_after": 19298815,
+    "eth_then": 2968.6489369899596,
+    "depositor_vs_passive": 0.02968237547684912,
+    "rent_pct": 0.02968237547684912,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.9249759320510722,
+    "manager_pnl_pct": -0.09249759320510718
+   },
+   "bond 0.20 rent 0.00": {
+    "liquidated_day": null,
+    "liquidated_block": null,
+    "checked_after": 21391200,
+    "eth_then": 3912.1272685305285,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.4823166989670921,
+    "manager_pnl_pct": -0.09646333979341844
+   },
+   "bond 0.20 rent 0.05": {
+    "liquidated_day": null,
+    "liquidated_block": null,
+    "checked_after": 21391200,
+    "eth_then": 3912.1272685305285,
+    "depositor_vs_passive": 0.07569101714216227,
+    "rent_pct": 0.07569101714216227,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.7409750797397072,
+    "manager_pnl_pct": -0.14819501594794152
+   }
+  },
+  "leases_checked_daily": {
+   "bond 0.05 rent 0.00": {
+    "liquidated_day": 169.0,
+    "liquidated_block": 19216800,
+    "checked_after": 19209600,
+    "eth_then": 2647.894038652065,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.856457241104817,
+    "manager_pnl_pct": -0.04282286205524085
+   },
+   "bond 0.05 rent 0.05": {
+    "liquidated_day": 136.0,
+    "liquidated_block": 18979200,
+    "checked_after": 18972000,
+    "eth_then": 2513.094983319476,
+    "depositor_vs_passive": 0.02138883862642091,
+    "rent_pct": 0.02138883862642091,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.9420076069942479,
+    "manager_pnl_pct": -0.04710038034971244
+   },
+   "bond 0.10 rent 0.00": {
+    "liquidated_day": 184.0,
+    "liquidated_block": 19324800,
+    "checked_after": 19317600,
+    "eth_then": 3295.791388133781,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.9690414741714164,
+    "manager_pnl_pct": -0.09690414741714165
+   },
+   "bond 0.10 rent 0.05": {
+    "liquidated_day": 181.0,
+    "liquidated_block": 19303200,
+    "checked_after": 19296000,
+    "eth_then": 3030.6796525686664,
+    "depositor_vs_passive": 0.030064666248307132,
+    "rent_pct": 0.030064666248307132,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.9766142075000577,
+    "manager_pnl_pct": -0.09766142075000579
+   },
+   "bond 0.20 rent 0.00": {
+    "liquidated_day": null,
+    "liquidated_block": null,
+    "checked_after": 21391200,
+    "eth_then": 3912.1272685305285,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.4823166989670921,
+    "manager_pnl_pct": -0.09646333979341844
+   },
+   "bond 0.20 rent 0.05": {
+    "liquidated_day": null,
+    "liquidated_block": null,
+    "checked_after": 21391200,
+    "eth_then": 3912.1272685305285,
+    "depositor_vs_passive": 0.07568259910897267,
+    "rent_pct": 0.07568259910897267,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.7409463128540674,
+    "manager_pnl_pct": -0.14818926257081347
+   }
+  }
+ },
+ "vault5763-5": {
+  "vault": "0x5763bf13a2ce7a76784b36aadf2f9098325d4038",
+  "days": 555,
+  "eth_start": 3250.0984310167746,
+  "eth_end": 1652.232805460764,
+  "vault_vs_passive": 0.12858272112267177,
+  "bond_needed": {
+   "0.00": 0.16908132995209482,
+   "0.05": 0.17974118121719046
+  },
+  "leases": {
+   "bond 0.05 rent 0.00": {
+    "liquidated_day": 41.3,
+    "liquidated_block": 14297369,
+    "checked_after": 14297368,
+    "eth_then": 2873.737022695006,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.7949185492753821,
+    "manager_pnl_pct": -0.03974592746376911
+   },
+   "bond 0.05 rent 0.05": {
+    "liquidated_day": 41.29,
+    "liquidated_block": 14297301,
+    "checked_after": 14297300,
+    "eth_then": 2839.6908697677823,
+    "depositor_vs_passive": 0.005620726342016023,
+    "rent_pct": 0.005620726342016023,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.797025076958703,
+    "manager_pnl_pct": -0.03985125384793511
+   },
+   "bond 0.10 rent 0.00": {
+    "liquidated_day": 57.28,
+    "liquidated_block": 14412435,
+    "checked_after": 14412434,
+    "eth_then": 2959.1621725635287,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.9100287500256758,
+    "manager_pnl_pct": -0.0910028750025676
+   },
+   "bond 0.10 rent 0.05": {
+    "liquidated_day": 57.12,
+    "liquidated_block": 14411288,
+    "checked_after": 14411287,
+    "eth_then": 2896.1595330813843,
+    "depositor_vs_passive": 0.007892725549270565,
+    "rent_pct": 0.007892725549270565,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.8979341396193411,
+    "manager_pnl_pct": -0.08979341396193405
+   },
+   "bond 0.20 rent 0.00": {
+    "liquidated_day": null,
+    "liquidated_block": null,
+    "checked_after": 17988800,
+    "eth_then": 1652.232805460764,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.0,
+    "manager_pnl_pct": 0.19815546629320574
+   },
+   "bond 0.20 rent 0.05": {
+    "liquidated_day": null,
+    "liquidated_block": null,
+    "checked_after": 17988800,
+    "eth_then": 1652.232805460764,
+    "depositor_vs_passive": 0.06753498504328377,
+    "rent_pct": 0.06753498504328377,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.0,
+    "manager_pnl_pct": 0.09407906834865343
+   }
+  },
+  "leases_checked_daily": {
+   "bond 0.05 rent 0.00": {
+    "liquidated_day": 42.0,
+    "liquidated_block": 14302400,
+    "checked_after": 14295200,
+    "eth_then": 2915.424094659915,
+    "depositor_vs_passive": -0.0013369096997255564,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0013369096997255564,
+    "bond_used_pct": 1.0,
+    "manager_pnl_pct": -0.05
+   },
+   "bond 0.05 rent 0.05": {
+    "liquidated_day": 42.0,
+    "liquidated_block": 14302400,
+    "checked_after": 14295200,
+    "eth_then": 2915.424094659915,
+    "depositor_vs_passive": -0.0013369096997256184,
+    "rent_pct": 0.0057893626297005,
+    "uncovered_pct": 0.007126272329426119,
+    "bond_used_pct": 1.0,
+    "manager_pnl_pct": -0.04999999999999994
+   },
+   "bond 0.10 rent 0.00": {
+    "liquidated_day": 58.0,
+    "liquidated_block": 14417600,
+    "checked_after": 14410400,
+    "eth_then": 2965.816856606472,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.920459238008665,
+    "manager_pnl_pct": -0.0920459238008665
+   },
+   "bond 0.10 rent 0.05": {
+    "liquidated_day": 58.0,
+    "liquidated_block": 14417600,
+    "checked_after": 14410400,
+    "eth_then": 2965.816856606472,
+    "depositor_vs_passive": 0.007497077316180605,
+    "rent_pct": 0.008103868459918997,
+    "uncovered_pct": 0.0006067911437383929,
+    "bond_used_pct": 1.0,
+    "manager_pnl_pct": -0.10000000000000005
+   },
+   "bond 0.20 rent 0.00": {
+    "liquidated_day": null,
+    "liquidated_block": null,
+    "checked_after": 17988800,
+    "eth_then": 1652.232805460764,
+    "depositor_vs_passive": 0.0,
+    "rent_pct": 0.0,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.0,
+    "manager_pnl_pct": 0.19815546629320574
+   },
+   "bond 0.20 rent 0.05": {
+    "liquidated_day": null,
+    "liquidated_block": null,
+    "checked_after": 17988800,
+    "eth_then": 1652.232805460764,
+    "depositor_vs_passive": 0.06753407838565237,
+    "rent_pct": 0.06753407838565237,
+    "uncovered_pct": 0.0,
+    "bond_used_pct": 0.0,
+    "manager_pnl_pct": 0.09408046557500041
+   }
+  }
+ }
+}

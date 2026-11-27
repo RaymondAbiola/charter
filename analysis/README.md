@@ -44,6 +44,35 @@ At hourly sampling both vaults are about +0.2% over 60 days, so effectively equa
 
 90-day skill scores agreed in sign with the full-period result only 36% to 67% of the time, and a rule that fired a manager after a bad quarter would have saved or cost depositors less than about one point either way.
 
+## The same vaults as Charter leases
+
+`backtest.py` replays each vault's real per-share holdings as one Charter lease, following the hook's settlement code:
+
+- **Owed** is the capital as full-range units plus the pool's full-range fees since the lease opened (`LeaseMath.owed`).
+- **Rent** accrues on the units' full-range value and is paid from the bond.
+- **Liquidation** happens when held value plus bond, less rent, falls below owed plus the 1% margin (`RiskLogic._assess`).
+- **Closing** works as in `LeaseLogic._close`: the bond fills any gap, and anything beyond it is uncovered.
+
+Values are in WETH, the pools' token1 and so the bond's currency. Each failure found in the daily samples is narrowed to the hour, then to 25 blocks, then to the exact block, from archive state. Those samples are cached in `data/intraday-*.json`, so the replay runs offline.
+
+At the minimum 5% bond and 0% rent:
+
+| Vault | Vault vs passive | Lease closed | Depositors vs passive | Uncovered | Manager |
+|---|---|---|---|---|---|
+| Charm | -12.34% | Day 102.8 | 0.00% | 0.00% | -3.89% |
+| G-UNI | -14.10% | Day 117.6 | 0.00% | 0.00% | -3.72% |
+| 0x381e | -14.11% | Day 168.7 | 0.00% | 0.00% | -4.21% |
+| 0x5763 | +12.86% | Day 41.3 | 0.00% | 0.00% | -3.97% |
+
+"Vault vs passive" uses Charter's benchmark, which leaves fees uninvested, so it differs slightly from the study above. Manager results are a share of the leased capital.
+
+- **Nothing was uncovered in any of the 24 cases** (bonds of 5, 10 and 20%, rent of 0 and 5%). Checked only once a day, the same leases leave up to 2.65% uncovered, and a bigger bond can leave more because the lease survives into a larger daily move.
+- **Bond needed to stay open for the whole period:** Charm 36.2%, G-UNI 62.8%, 0x381e 15.0%, 0x5763 16.9% (0% rent).
+- **0x5763 with a 20% bond** is never liquidated: the manager ends +19.82% of the capital ahead and depositors get passive.
+- **At 5% rent**, depositors end 0.56 to 2.11 points ahead of passive at the minimum bond.
+
+Limits: passive fees come from the pool's fee growth, not Charter's in-pool estimator. The manager follows the vault's real strategy and never tops up. Only the failing days are searched block by block, so a breach that recovered within a day is missed. The hook checks every swap, so the block a lease fails in is still a little late.
+
 ## Reproduce
 
 ```
@@ -52,4 +81,6 @@ python3 fetch.py                  # data/*.json
 python3 score.py                  # results/study.json
 python3 sampling.py 15000000 60   # results/sampling.json
 python3 discover.py <pool>        # find more vaults
+python3 backtest.py               # results/backtest.json, from the cached samples
+python3 backtest.py --fetch       # refetch block-level samples (needs archive state)
 ```

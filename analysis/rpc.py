@@ -23,7 +23,7 @@ def call(method, params, tries=5):
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     for i in range(tries):
         try:
-            req = urllib.request.Request(URL, body, {"content-type": "application/json"})
+            req = urllib.request.Request(URL, body, {"content-type": "application/json", "user-agent": "vault-study/1.0"})
             res = json.load(urllib.request.urlopen(req, timeout=30))
             if "error" in res:
                 raise RuntimeError(res["error"].get("message", "rpc error"))
