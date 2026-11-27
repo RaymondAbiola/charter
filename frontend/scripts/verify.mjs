@@ -115,6 +115,13 @@ try {
         waitUntil: "networkidle0",
       });
       assert.equal(response.status(), 200, `${label}: status`);
+      assert.ok(
+        await page.$eval(".c-get-tokens", (button) => {
+          const r = button.getBoundingClientRect();
+          return r.top >= 0 && r.bottom <= innerHeight && !button.disabled;
+        }),
+        `${label}: test tokens are visible above the fold`,
+      );
       await loaded(page);
       const main = await page.$eval("main", (m) => m.innerText);
       assert.ok(!/Chain signal unavailable/.test(main), `${label}: chain read`);
@@ -178,6 +185,9 @@ try {
   await walletPage.waitForSelector(".c-wallet-balances");
   passed.push("an existing wallet connection is picked up without a prompt");
 
+  await walletPage.waitForFunction(
+    () => !document.querySelector(".c-transfer form > .c-primary")?.disabled,
+  );
   await click(walletPage, "Supply capital →");
   await waitText(
     walletPage,

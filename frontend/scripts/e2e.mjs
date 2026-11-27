@@ -2,6 +2,12 @@
 // Needs Foundry's anvil and Chrome. Nothing reaches the real chain: the fork signs for a
 // throwaway address that the hook has never seen.
 import assert from "node:assert/strict";
+import {
+  erc20Abi,
+  encodeFunctionData,
+  parseUnits,
+  toFunctionSelector,
+} from "viem";
 import { spawn } from "node:child_process";
 import { mkdirSync, openSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -125,24 +131,129 @@ try {
   await step("the wallet connects on the right chain", async () => {
     await waitText(page, /0x0000…c4a7/i);
   });
+  await step("zero gas is explained before minting or depositing", async () => {
+    await call("anvil_setBalance", [me, "0x0"]);
+    await call("evm_mine");
+    await page.waitForFunction(
+      () =>
+        document.querySelector(".c-transfer form > .c-primary")?.disabled &&
+        document.querySelector(".c-transfer .c-gas-help"),
+    );
+    await click(page, "Get test tokens");
+    await page.waitForSelector("dialog[open]");
+    assert.match(
+      await page.$eval("dialog", (e) => e.innerText),
+      /tWETH cannot pay this fee[\s\S]*Add gas ETH before minting/,
+    );
+    assert.ok(await page.$eval(".c-net-content button", (b) => b.disabled));
+    assert.ok(
+      await page.$(
+        'dialog a[href="https://developers.uniswap.org/docs/unichain/tools/faucets"]',
+      ),
+    );
+    await click(page, "Close");
+    await call("anvil_setBalance", [me, "0x56BC75E2D63100000"]);
+    await call("evm_mine");
+  });
   await step("the faucet mints test tokens", async () => {
-    await page.$eval(".c-net-tools", (d) => (d.open = true));
+    await click(page, "Get test tokens");
+    await page.waitForSelector("dialog[open]");
+    await page.waitForFunction(
+      () => !document.querySelector(".c-net-content button")?.disabled,
+    );
     await click(page, "Mint 10 tWETH");
     await waitText(page, /Minted 10 tWETH and 50,000 tUSDC/);
+    await page.click(".c-continue");
+    await page.waitForSelector("dialog:not([open])");
+    await page.waitForFunction(() => location.hash === "#deposit-form");
   });
-  await step("a deposit approves both tokens and mints shares", async () => {
-    await input(page, 'input[name="shares"]', "0.00001");
-    await new Promise((r) => setTimeout(r, 1500));
-    await click(page, "Supply capital →");
-    await waitText(page, /Deposit confirmed/);
-    await waitText(page, /0\.00001000/);
-  });
+  await step(
+    "a value preset mints exactly the native shares shown in the form",
+    async () => {
+      await page.click(".c-value-presets button");
+      await page.waitForFunction(
+        () =>
+          !document.querySelector(".c-transfer form > .c-primary")?.disabled,
+      );
+      const quoted = await page.$eval(".c-deposit-value strong", (e) =>
+        Number(e.textContent.replace(/[^0-9.]/g, "")),
+      );
+      assert.ok(
+        quoted > 99 && quoted < 101,
+        `The $100 preset has a live quote of ${quoted}`,
+      );
+      const chosen = await page.$eval('input[name="shares"]', (e) => e.value);
+      const hook = await page.$eval(
+        '.c-net-content a[href*="/address/"]',
+        (a) => new URL(a.href).pathname.split("/").at(-1),
+      );
+      await click(page, "Supply capital →");
+      await waitText(page, /Deposit confirmed/);
+      const minted = BigInt(
+        await call("eth_call", [
+          {
+            to: hook,
+            data: encodeFunctionData({
+              abi: erc20Abi,
+              functionName: "balanceOf",
+              args: [me],
+            }),
+          },
+          "latest",
+        ]),
+      );
+      assert.equal(minted, parseUnits(chosen, 18));
+    },
+  );
+  await step(
+    "a changed share amount cannot submit with a stale quote",
+    async () => {
+      let held;
+      const selector = toFunctionSelector("previewDeposit(uint256)");
+      await page.setRequestInterception(true);
+      const intercept = (request) => {
+        const raw = request.postData();
+        if (
+          raw &&
+          raw.includes(selector) &&
+          new URL(request.url()).origin === rpc &&
+          !held
+        )
+          held = request;
+        else void request.continue();
+      };
+      page.on("request", intercept);
+      await input(page, 'input[name="shares"]', "0.000002");
+      await until(() => Boolean(held), "a held deposit quote", 10000);
+      assert.ok(
+        await page.$eval(
+          ".c-transfer form > .c-primary",
+          (button) => button.disabled,
+        ),
+      );
+      assert.match(
+        await page.$eval(".c-deposit-value", (e) => e.innerText),
+        /Updating quote/,
+      );
+      await held.continue();
+      page.off("request", intercept);
+      await page.setRequestInterception(false);
+      await page.waitForFunction(
+        () =>
+          !document.querySelector(".c-transfer form > .c-primary")?.disabled,
+      );
+    },
+  );
+
   await step(
     "withdrawing more than you hold is stopped with a reason",
     async () => {
       await click(page, "Withdraw");
       await input(page, 'input[name="shares"]', "1");
-      await new Promise((r) => setTimeout(r, 800));
+      await page.waitForFunction(
+        () =>
+          !document.querySelector(".c-transfer form > .c-primary")?.disabled,
+      );
       await click(page, "Withdraw shares →");
       await waitText(page, /You do not hold that many shares/, {
         errors: false,
@@ -152,7 +263,9 @@ try {
   await step("a full withdrawal returns the tokens", async () => {
     await click(page, "Supply capital");
     await click(page, "Withdraw");
-    await new Promise((r) => setTimeout(r, 1500));
+    await page.waitForFunction(
+      () => !document.querySelector(".c-transfer form > .c-primary")?.disabled,
+    );
     await click(page, "Withdraw shares →");
     await waitText(page, /Withdrawal confirmed/);
   });

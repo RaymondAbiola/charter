@@ -80,8 +80,12 @@ export function useDepositForm() {
   const [mode, setMode] = useState<"deposit" | "withdraw">("deposit");
   const [input, setInput] = useState("0.00001");
   const [slippage, setSlippage] = useState("0.50");
-  const [quote, setQuote] = useState<TokenAmounts>([0n, 0n]);
-  const [quoteError, setQuoteError] = useState("");
+  const [priced, setPriced] = useState<{
+    mode: "deposit" | "withdraw";
+    shares: bigint;
+    amounts: TokenAmounts;
+    error: string;
+  } | null>(null);
 
   let shares = 0n,
     validation = "";
@@ -91,14 +95,31 @@ export function useDepositForm() {
     validation = e instanceof Error ? e.message : "Invalid amount.";
   }
 
+  const current =
+    priced?.mode === mode && priced.shares === shares ? priced : null;
+  const quoteReady = Boolean(shares > 0n && current && !current.error);
+  const quoting = Boolean(shares > 0n && !validation && !current);
+  const quote: TokenAmounts = quoteReady ? current!.amounts : [0n, 0n];
+
   useEffect(() => {
     if (!shares) return;
     let live = true;
     const timer = setTimeout(() => {
       reader
         .preview(mode, shares)
-        .then((q) => live && (setQuote(q), setQuoteError("")))
-        .catch(() => live && setQuoteError("Could not price that amount."));
+        .then((amounts) => {
+          if (live) setPriced({ mode, shares, amounts, error: "" });
+        })
+        .catch(() => {
+          if (live)
+            setPriced({
+              mode,
+              shares,
+              amounts: [0n, 0n],
+              error:
+                "Could not price that amount. Try a smaller value or enter LP shares.",
+            });
+        });
     }, 250);
     return () => {
       live = false;
@@ -129,11 +150,15 @@ export function useDepositForm() {
         const bps = BigInt(Math.round(slip * 100));
         const wallet = data.wallet;
         if (mode === "deposit") {
+          need(
+            quoteReady,
+            current?.error || "Wait for the token quote before depositing.",
+          );
           const max0 = (quote[0] * (10000n + bps) + 9999n) / 10000n;
           const max1 = (quote[1] * (10000n + bps) + 9999n) / 10000n;
           need(
             wallet.weth >= max0 && wallet.usdc >= max1,
-            "Not enough test tokens. Use the faucet in the footer.",
+            "Not enough test tokens. Use Get test tokens in the header.",
           );
           await writer.approve(
             account,
@@ -150,6 +175,10 @@ export function useDepositForm() {
           await writer.deposit(account, shares, max0, max1);
         } else {
           need(shares <= wallet.shares, "You do not hold that many shares.");
+          need(
+            quoteReady,
+            current?.error || "Wait for the token quote before withdrawing.",
+          );
           await writer.withdraw(
             account,
             shares,
@@ -173,7 +202,9 @@ export function useDepositForm() {
     setSlippage,
     shares,
     quote: shares ? quote : ([0n, 0n] as const),
-    validation: validation || quoteError,
+    quoteReady,
+    quoting,
+    validation: validation || current?.error || "",
     submit,
   };
 }
@@ -216,7 +247,7 @@ export function useBidForm() {
         const bondRaw = usdcRaw(b);
         need(
           data.wallet.usdc >= bondRaw,
-          "Not enough tUSDC for the bond. Use the faucet in the footer.",
+          "Not enough tUSDC for the bond. Use Get test tokens in the header.",
         );
         await writer.approve(
           account,
@@ -321,7 +352,7 @@ export function useManagerForm() {
           need(amount > 0n, "Enter a top-up above zero.");
           need(
             data.wallet.usdc >= amount,
-            "Not enough tUSDC. Use the faucet in the footer.",
+            "Not enough tUSDC. Use Get test tokens in the header.",
           );
           await writer.approve(
             account,

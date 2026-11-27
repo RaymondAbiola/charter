@@ -1,6 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRef } from "react";
+import { formatUnits } from "viem";
+import { DepositSetup, GasHelp } from "./onboarding";
+import { estimateSharesForValue } from "@/lib/onboarding";
+import { value, weth, usdc } from "@/chain/math";
 import {
   Area,
   ComposedChart,
@@ -16,6 +21,8 @@ import {
 } from "recharts";
 import type { Screen } from "@/lib/screens";
 import { NetworkPanel } from "./network";
+import { OverviewIntro, ScreenNote } from "./intro";
+import { SnapshotLoading } from "./snapshot-state";
 import { useChain, useSnapshot } from "@/state/provider";
 import {
   useActivity,
@@ -51,6 +58,7 @@ const pages: [Screen, string, string][] = [
   ["activity", "Logbook", "05"],
 ];
 export function Charter({ screen }: { screen: Screen }) {
+  const tokensDialog = useRef<HTMLDialogElement>(null);
   const { status, account, connect, disconnect, connectError, data, refresh } =
     useChain();
   return (
@@ -101,8 +109,17 @@ export function Charter({ screen }: { screen: Screen }) {
         <header className="c-header">
           <span>CHARTER / OPERATIONS</span>
           <p>
-            tWETH / tUSDC <b>● LIVE</b>
+            tWETH / tUSDC{" "}
+            <b>
+              <span className="c-dot" aria-hidden="true" />
+              {data
+                ? "LIVE"
+                : status === "error"
+                  ? "UNAVAILABLE"
+                  : "CONNECTING"}
+            </b>
           </p>
+          <NetworkPanel dialogRef={tokensDialog} />
           <button
             onClick={() => void connect()}
             title={connectError || account || "Connect a browser wallet"}
@@ -130,20 +147,23 @@ export function Charter({ screen }: { screen: Screen }) {
             <span>
               USDC DENOMINATED
               <br />
-              {data ? `BLOCK ${data.block.toLocaleString("en-US")}` : "LIVE"}
+              {data
+                ? `BLOCK ${data.block.toLocaleString("en-US")}`
+                : "AWAITING BLOCK"}
             </span>
           </div>
+          {screen === "overview" ? (
+            <OverviewIntro />
+          ) : (
+            <ScreenNote screen={screen} />
+          )}
           {connectError && (
             <p className="c-error" role="alert">
               {connectError}
             </p>
           )}
           {status === "loading" || (!data && status !== "error") ? (
-            <section className="c-state" role="status">
-              <div className="c-state-instrument" />
-              <h2>Reading the instruments.</h2>
-              <p>Waiting for the vault on Unichain Sepolia.</p>
-            </section>
+            <SnapshotLoading />
           ) : !data ? (
             <section className="c-state" role="alert">
               <h2>Chain signal unavailable.</h2>
@@ -155,7 +175,7 @@ export function Charter({ screen }: { screen: Screen }) {
           ) : screen === "overview" ? (
             <Overview />
           ) : screen === "deposit" ? (
-            <Deposit />
+            <Deposit onGetTokens={() => tokensDialog.current?.showModal()} />
           ) : screen === "leases" ? (
             <Leases />
           ) : screen === "manager" ? (
@@ -163,13 +183,13 @@ export function Charter({ screen }: { screen: Screen }) {
           ) : (
             <Activity />
           )}
+          {screen === "overview" && <Evidence />}
           <footer className="c-footer">
             <span>UHI-11 / UNISWAP V4</span>
             <p>
               Live on Unichain Sepolia with test tokens. The study figures are
               historical observations.
             </p>
-            {data && <NetworkPanel />}
           </footer>
         </main>
       </div>
@@ -253,12 +273,12 @@ function Overview() {
     <>
       <section className="c-overview-instruments">
         <div className="c-capital">
-          <p className="c-eyebrow">TOTAL DEPOSITED / USDC + WETH</p>
+          <p className="c-eyebrow">VAULT CAPITAL / USDC VALUE</p>
           <strong title={money(m.total)}>{money(m.total, true)}</strong>
           <p>
-            Managers pay rent to run your liquidity.
+            Capital in one Uniswap v4 pool.
             <br />
-            You are owed what passive would have earned.
+            Leased to managers or held at full range.
           </p>
           <div className="c-capital-split">
             <span style={{ width: `${m.leasedPercent}%` }} />
@@ -288,6 +308,10 @@ function Overview() {
             <h2>Bond watch</h2>
             <span>AFTER EVERY SWAP</span>
           </div>
+          <p className="c-instrument-note">
+            Equity against what is owed. Below {LIQUIDATION}%, the hook
+            liquidates the lease.
+          </p>
           {data.leases.length ? (
             <div className="c-gauge-row">
               {data.leases.map((lease) => (
@@ -295,7 +319,13 @@ function Overview() {
                   <p>
                     SLOT 0{lease.slot}{" "}
                     <span
-                      className={health(lease) === "At risk" ? "c-risk" : ""}
+                      className={
+                        health(lease) === "At risk"
+                          ? "c-risk"
+                          : health(lease) === "Healthy"
+                            ? "c-healthy"
+                            : "c-brass"
+                      }
                     >
                       {health(lease)}
                     </span>
@@ -331,145 +361,151 @@ function Overview() {
           <li>
             <span>02</span>
             <p>
-              <b>Rent out the range.</b> Managers bid rent and post a bond. They
+              <b>Lease the capital.</b> Managers bid rent and post a bond. They
               keep returns above the passive result and rent owed.
             </p>
           </li>
           <li>
             <span>03</span>
             <p>
-              <b>Return it whole.</b> The hook checks each swap. A low bond
-              liquidates the manager in that swap and returns capital to
+              <b>Settle against passive.</b> The hook checks each swap. A low
+              bond liquidates the manager in that swap and returns capital to
               passive.
             </p>
           </li>
         </ol>
       </section>
-      <section className="c-research">
-        <div className="c-panel-heading">
-          <div>
-            <p className="c-eyebrow">REFERENCE OBSERVATIONS / V3</p>
-            <h2>Know what you are measuring.</h2>
-          </div>
-          <span>04 VAULTS / MAINNET</span>
-        </div>
-        <div className="c-research-body">
-          <figure>
-            <div className="c-evidence-chart">
-              <ResponsiveContainer width="100%" height={276}>
-                <ScatterChart
-                  margin={{ top: 20, left: 0, right: 20, bottom: 0 }}
-                >
-                  <CartesianGrid stroke="#304b5b" horizontal={false} />
-                  <XAxis
-                    dataKey="x"
-                    type="number"
-                    domain={[-16, 16]}
-                    ticks={[-15, -10, -5, 0, 5, 10, 15]}
-                    tickFormatter={(v) => `${v}%`}
-                    tick={{ fill: "#b6c2c8", fontSize: 12 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    dataKey="y"
-                    type="number"
-                    domain={[0.5, 4.5]}
-                    ticks={[1, 2, 3, 4]}
-                    reversed
-                    tickFormatter={(n) =>
-                      ["Charm Alpha", "G-UNI", "0x381e", "0x5763"][n - 1]
-                    }
-                    tick={{ fill: "#c8d2d5", fontSize: 12 }}
-                    width={78}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <ReferenceLine x={0} stroke="#82909c" />
-                  <Tooltip
-                    contentStyle={{
-                      background: "#183244",
-                      border: "1px solid #6e8390",
-                      color: "#ede4d1",
-                    }}
-                    formatter={(value, name) =>
-                      name === "x"
-                        ? [`${value}%`, "vs passive"]
-                        : [value, "Vault row"]
-                    }
-                  />
-                  <Scatter
-                    name="Return vs passive"
-                    data={evidence.map((row, i) => ({
-                      x: row.returnVsPassive,
-                      y: i + 1,
-                    }))}
-                    fill="#d8b878"
-                    shape="diamond"
-                    isAnimationActive={false}
-                  />
-                  <Scatter
-                    name="Market-making skill"
-                    data={evidence.map((row, i) => ({
-                      x: row.skillVsPassive,
-                      y: i + 1,
-                    }))}
-                    fill="#9eb4bf"
-                    isAnimationActive={false}
-                  />
-                </ScatterChart>
-              </ResponsiveContainer>
-            </div>
-            <figcaption>
-              <span>◆ Return vs passive</span>
-              <span>● Market-making skill</span>
-              <p>
-                Full-period observations. No historical time series is implied.
-              </p>
-            </figcaption>
-          </figure>
-          <div>
-            <p className="c-research-note">{evidenceNote}</p>
-            <div
-              className="c-table-wrap"
-              tabIndex={0}
-              role="region"
-              aria-label="Scrollable vault data table"
-            >
-              <table>
-                <thead>
-                  <tr>
-                    <th>Vault / ETH period</th>
-                    <th>Days</th>
-                    <th>Return</th>
-                    <th>Skill</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {evidence.map((row) => (
-                    <tr key={row.vault}>
-                      <td>
-                        {row.vault}
-                        <small>
-                          {money(row.startPrice)} to {money(row.endPrice)}
-                        </small>
-                      </td>
-                      <td>{row.days}</td>
-                      <td>
-                        {row.returnVsPassive > 0 ? "+" : ""}
-                        {percent(row.returnVsPassive)}
-                      </td>
-                      <td>{percent(row.skillVsPassive)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-        <p className="c-source">{evidenceSource}</p>
-      </section>
     </>
+  );
+}
+function Evidence() {
+  return (
+    <section
+      className="c-research"
+      id="vault-study"
+      aria-labelledby="vault-study-title"
+    >
+      <div className="c-panel-heading">
+        <div>
+          <p className="c-eyebrow">REFERENCE OBSERVATIONS / V3</p>
+          <h2 id="vault-study-title">Returns hid a different risk.</h2>
+        </div>
+        <span>04 VAULTS / MAINNET</span>
+      </div>
+      <div className="c-research-body">
+        <figure>
+          <div className="c-evidence-chart">
+            <ResponsiveContainer width="100%" height={276}>
+              <ScatterChart margin={{ top: 20, left: 0, right: 20, bottom: 0 }}>
+                <CartesianGrid stroke="#304b5b" horizontal={false} />
+                <XAxis
+                  dataKey="x"
+                  type="number"
+                  domain={[-16, 16]}
+                  ticks={[-15, -10, -5, 0, 5, 10, 15]}
+                  tickFormatter={(v) => `${v}%`}
+                  tick={{ fill: "#b6c2c8", fontSize: 12 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  dataKey="y"
+                  type="number"
+                  domain={[0.5, 4.5]}
+                  ticks={[1, 2, 3, 4]}
+                  reversed
+                  tickFormatter={(n) =>
+                    ["Charm Alpha", "G-UNI", "0x381e", "0x5763"][n - 1]
+                  }
+                  tick={{ fill: "#c8d2d5", fontSize: 12 }}
+                  width={78}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <ReferenceLine x={0} stroke="#82909c" />
+                <Tooltip
+                  contentStyle={{
+                    background: "#183244",
+                    border: "1px solid #6e8390",
+                    color: "#ede4d1",
+                  }}
+                  formatter={(value, name) =>
+                    name === "x"
+                      ? [`${value}%`, "vs passive"]
+                      : [value, "Vault row"]
+                  }
+                />
+                <Scatter
+                  name="Return vs passive"
+                  data={evidence.map((row, i) => ({
+                    x: row.returnVsPassive,
+                    y: i + 1,
+                  }))}
+                  fill="#d8b878"
+                  shape="diamond"
+                  isAnimationActive={false}
+                />
+                <Scatter
+                  name="Market-making skill"
+                  data={evidence.map((row, i) => ({
+                    x: row.skillVsPassive,
+                    y: i + 1,
+                  }))}
+                  fill="#9eb4bf"
+                  isAnimationActive={false}
+                />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+          <figcaption>
+            <span>◆ Return vs passive</span>
+            <span>● Market-making skill</span>
+            <p>
+              Full-period observations. No historical time series is implied.
+            </p>
+          </figcaption>
+        </figure>
+        <div>
+          <p className="c-research-note">{evidenceNote}</p>
+          <div
+            className="c-table-wrap"
+            tabIndex={0}
+            role="region"
+            aria-label="Scrollable vault data table"
+          >
+            <table>
+              <thead>
+                <tr>
+                  <th>Vault / ETH period</th>
+                  <th>Days</th>
+                  <th>Return</th>
+                  <th>Skill</th>
+                </tr>
+              </thead>
+              <tbody>
+                {evidence.map((row) => (
+                  <tr key={row.vault}>
+                    <td>
+                      {row.vault}
+                      <small>
+                        {money(row.startPrice)} to {money(row.endPrice)}
+                      </small>
+                    </td>
+                    <td>{row.days}</td>
+                    <td>
+                      {row.returnVsPassive > 0 ? "+" : ""}
+                      {percent(row.returnVsPassive)}
+                    </td>
+                    <td>{percent(row.skillVsPassive)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <p className="c-source">{evidenceSource}</p>
+    </section>
   );
 }
 function Range({
@@ -600,128 +636,211 @@ function Range({
     </div>
   );
 }
-function Deposit() {
+function Deposit({ onGetTokens }: { onGetTokens: () => void }) {
   const form = useDepositForm();
   const m = useMetrics();
   const { account, data } = useSnapshot();
   const w = data.wallet;
+  const quotedValue = value(
+    [weth(form.quote[0]), usdc(form.quote[1])],
+    data.price,
+  );
   return (
-    <div className="c-capital-layout">
-      <section className="c-position">
-        <p className="c-eyebrow">YOUR SHARE OF THE VAULT</p>
-        <h2>{money(m.worth)}</h2>
-        <p>Position value / USD</p>
-        <dl>
-          <div>
-            <dt>Charter LP shares</dt>
-            <dd>{token(m.shares, 18, 8)}</dd>
-          </div>
-          <div>
-            <dt>Owed: passive + rent</dt>
-            <dd>{money(m.owed)}</dd>
-          </div>
-          <div>
-            <dt>Passive component</dt>
-            <dd>{money(m.baseline)}</dd>
-          </div>
-          <div title="Your pro-rata share of all rent paid into the vault, at your current holding">
-            <dt>Rent earned to date</dt>
-            <dd className="c-brass">{money(m.earned)}</dd>
-          </div>
-        </dl>
-        <div className="c-contract-note">
-          <span>01 / CAPITAL OBLIGATION</span>
+    <>
+      <DepositSetup onGetTokens={onGetTokens} />
+      <div className="c-capital-layout">
+        <section className="c-position">
+          <p className="c-eyebrow">YOUR SHARE OF THE VAULT</p>
+          <h2>{money(m.worth)}</h2>
           <p>
-            Managers must return the passive result plus rent. Their bond covers
-            any shortfall. Your LP shares represent a proportional vault
-            interest.
+            {account
+              ? "Position value / USD"
+              : "Connect your wallet to see your position."}
           </p>
-        </div>
-      </section>
-      <section className="c-transfer">
-        <div className="c-segment">
-          {(["deposit", "withdraw"] as const).map((mode) => (
-            <button
-              key={mode}
-              aria-pressed={form.mode === mode}
-              onClick={() => form.setMode(mode)}
-            >
-              {mode === "deposit" ? "Supply capital" : "Withdraw"}
-            </button>
-          ))}
-        </div>
-        <form onSubmit={form.submit}>
-          <label>
-            CHARTER LP SHARES
-            <input
-              name="shares"
-              inputMode="decimal"
-              value={form.input}
-              onChange={(e) => form.setInput(e.target.value)}
-            />
-          </label>
-          <div className="c-token-preview">
+          <dl>
+            <div>
+              <dt>Charter LP shares</dt>
+              <dd>{token(m.shares, 18, 8)}</dd>
+            </div>
+            <div>
+              <dt>Owed: passive + rent</dt>
+              <dd>{money(m.owed)}</dd>
+            </div>
+            <div>
+              <dt>Passive component</dt>
+              <dd>{money(m.baseline)}</dd>
+            </div>
+            <div title="Your pro-rata share of all rent paid into the vault, at your current holding">
+              <dt>Rent earned to date</dt>
+              <dd className="c-brass">{money(m.earned)}</dd>
+            </div>
+          </dl>
+          <div className="c-contract-note">
+            <span>01 / CAPITAL OBLIGATION</span>
             <p>
-              {form.mode === "deposit" ? "TOKENS REQUIRED" : "TOKENS RETURNED"}{" "}
-              <span>LIVE PREVIEW</span>
+              Managers must return the passive result plus rent. Their bond
+              covers any shortfall. Your LP shares represent a proportional
+              vault interest.
             </p>
-            <div>
-              <span className="c-token-symbol">E</span>
-              <span>
-                tWETH<small>Token 0</small>
-              </span>
-              <strong>{token(form.quote[0], 18)}</strong>
-            </div>
-            <div>
-              <span className="c-token-symbol">U</span>
-              <span>
-                tUSDC<small>Token 1</small>
-              </span>
-              <strong>{token(form.quote[1], 6)}</strong>
-            </div>
           </div>
-          <label>
-            SLIPPAGE TOLERANCE (%)
-            <input
-              name="slippage"
-              type="number"
-              min="0.1"
-              max="5"
-              step="0.1"
-              value={form.slippage}
-              onChange={(e) => form.setSlippage(e.target.value)}
-            />
-          </label>
-          {account && w && (
-            <div className="c-wallet-balances" aria-label="Wallet balances">
-              <span>Wallet</span>
-              <b>{token(w.weth, 18, 4)} tWETH</b>
-              <b>{token(w.usdc, 6, 2)} tUSDC</b>
+        </section>
+        <section className="c-transfer" id="deposit-form">
+          <div className="c-segment">
+            {(["deposit", "withdraw"] as const).map((mode) => (
+              <button
+                key={mode}
+                aria-pressed={form.mode === mode}
+                onClick={() => form.setMode(mode)}
+              >
+                {mode === "deposit" ? "Supply capital" : "Withdraw"}
+              </button>
+            ))}
+          </div>
+          <form onSubmit={form.submit}>
+            <div
+              className="c-deposit-value"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              <p className="c-eyebrow">
+                {form.mode === "deposit"
+                  ? "ESTIMATED DEPOSIT VALUE"
+                  : "ESTIMATED WITHDRAWAL VALUE"}
+              </p>
+              <strong>
+                {form.quoting
+                  ? "Updating quote..."
+                  : form.quoteReady
+                    ? money(quotedValue)
+                    : "Quote unavailable"}
+              </strong>
+              <p>
+                USDC value at the vault&apos;s settlement price. The token
+                amounts below come from the hook.
+              </p>
             </div>
-          )}
-          <p className="c-small">
-            {account && w
-              ? "Slippage sets maximum token inputs or minimum token outputs."
-              : "Connect a wallet to deposit. Reading works without one."}
-          </p>
-          {(form.error || form.validation) && (
-            <p className="c-error" role="alert">
-              {form.error || form.validation}
+            {form.mode === "deposit" && (
+              <div
+                className="c-value-presets"
+                role="group"
+                aria-label="Choose an approximate deposit value"
+              >
+                {[100, 500, 1000].map((amount) => {
+                  const shares = estimateSharesForValue(
+                    amount,
+                    data.supply,
+                    data.total,
+                  );
+                  return (
+                    <button
+                      type="button"
+                      key={amount}
+                      disabled={form.pending || !shares}
+                      onClick={() =>
+                        shares && form.setInput(formatUnits(shares, 18))
+                      }
+                    >
+                      About {money(amount)}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <label>
+              {form.mode === "deposit"
+                ? "LP SHARES TO RECEIVE"
+                : "LP SHARES TO REDEEM"}
+              <input
+                name="shares"
+                aria-describedby="share-input-help"
+                inputMode="decimal"
+                value={form.input}
+                onChange={(e) => form.setInput(e.target.value)}
+              />
+            </label>
+            <p id="share-input-help" className="c-small">
+              Small share counts are normal. Shares are ownership units, not
+              dollars or a percentage.
+              {form.mode === "deposit" &&
+                " Use a value button above, or enter exact LP shares."}
             </p>
-          )}
-          <p role="status" className="c-feedback">
-            {form.message}
-          </p>
-          <button className="c-primary" disabled={form.pending || !account}>
-            {form.pending
-              ? WAITING
-              : form.mode === "deposit"
-                ? "Supply capital →"
-                : "Withdraw shares →"}
-          </button>
-        </form>
-      </section>
-    </div>
+            <div className="c-token-preview">
+              <p>
+                {form.mode === "deposit"
+                  ? "TOKENS REQUIRED"
+                  : "TOKENS RETURNED"}{" "}
+                <span>LIVE PREVIEW</span>
+              </p>
+              <div>
+                <span className="c-token-symbol">E</span>
+                <span>
+                  tWETH<small>Token 0</small>
+                </span>
+                <strong>
+                  {form.quoting ? "Quoting..." : token(form.quote[0], 18)}
+                </strong>
+              </div>
+              <div>
+                <span className="c-token-symbol">U</span>
+                <span>
+                  tUSDC<small>Token 1</small>
+                </span>
+                <strong>
+                  {form.quoting ? "Quoting..." : token(form.quote[1], 6)}
+                </strong>
+              </div>
+            </div>
+            <label>
+              SLIPPAGE TOLERANCE (%)
+              <input
+                name="slippage"
+                type="number"
+                min="0.1"
+                max="5"
+                step="0.1"
+                value={form.slippage}
+                onChange={(e) => form.setSlippage(e.target.value)}
+              />
+            </label>
+            {account && w && (
+              <div className="c-wallet-balances" aria-label="Wallet balances">
+                <span>Wallet</span>
+                <b>{token(w.weth, 18, 4)} tWETH</b>
+                <b>{token(w.usdc, 6, 2)} tUSDC</b>
+              </div>
+            )}
+            {account && w?.eth === 0n && <GasHelp eth={w.eth} />}
+            <p className="c-small">
+              {account && w
+                ? "Slippage sets maximum token inputs or minimum token outputs."
+                : "Connect a wallet to deposit. Reading works without one."}
+            </p>
+            {(form.error || form.validation) && (
+              <p className="c-error" role="alert">
+                {form.error || form.validation}
+              </p>
+            )}
+            <p role="status" className="c-feedback">
+              {form.message}
+            </p>
+            <button
+              className="c-primary"
+              disabled={
+                form.pending || form.quoting || !account || !w || w.eth === 0n
+              }
+            >
+              {form.pending
+                ? WAITING
+                : form.quoting
+                  ? "Updating quote..."
+                  : form.mode === "deposit"
+                    ? "Supply capital →"
+                    : "Withdraw shares →"}
+            </button>
+          </form>
+        </section>
+      </div>
+    </>
   );
 }
 function Leases() {
@@ -775,7 +894,11 @@ function Leases() {
                     <td>
                       <span
                         className={
-                          health(lease) === "At risk" ? "c-risk" : "c-brass"
+                          health(lease) === "At risk"
+                            ? "c-risk"
+                            : health(lease) === "Healthy"
+                              ? "c-healthy"
+                              : "c-brass"
                         }
                       >
                         {percent(coverage(lease))} / {health(lease)}
@@ -1189,8 +1312,8 @@ function Activity() {
         </ol>
       ) : (
         <div className="c-empty">
-          <h3>No entries on this bearing.</h3>
-          <p>Change the event filter or make the first move.</p>
+          <h3>No matching activity.</h3>
+          <p>Choose another event type or turn off the wallet filter.</p>
         </div>
       )}
     </section>

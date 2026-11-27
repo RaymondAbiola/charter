@@ -10,26 +10,30 @@ Every vault figure is read from the hook's own view functions at a single block.
 
 1. Add a browser wallet such as MetaMask or Rabby. The app switches it to Unichain Sepolia (chain 1301) and adds the network if it is missing.
 2. Get a little Unichain Sepolia ETH for gas from any public faucet.
-3. Open **Test tokens** in the footer and mint 10 tWETH and 50,000 tUSDC. The tokens are open-mint test tokens deployed for this pool.
+3. Click **Get test tokens** in the header and mint 10 tWETH and 50,000 tUSDC. The tokens are open-mint test tokens deployed for this pool.
 
 Without a wallet, every screen still loads and reads the live vault.
 
-| Screen | What it does |
-| --- | --- |
-| Overview | Vault size, the leased and passive split, average rent, and a bond gauge per lease. The study figures from `analysis/` sit beside them. |
-| Your capital | Deposit or withdraw Charter LP shares, with token amounts quoted by the hook's `previewDeposit` and `previewWithdraw`. |
-| Lease board | Every lease with its rent, capital, bond, equity against what it owes, and range. Open an empty slot, or bid on a leased one. Once a bid's five-minute delay has passed, anyone can press **Activate takeover**. |
-| Manager station | For the connected wallet's lease: bond coverage, rent burn, the estimated liquidation band, rebalance, bond top-up and exit. |
-| Logbook | Every hook event since deployment, filterable, each linked to its transaction on the explorer. |
+**Your first deposit.** The capital screen walks through four steps: connect, add gas, mint, deposit. Gas is native Unichain Sepolia ETH, available from the faucets in the [Uniswap faucet guide](https://developers.uniswap.org/docs/unichain/tools/faucets); tWETH is a pool token and cannot pay it. The **About $100 / $500 / $1,000** buttons fill in an estimated number of LP shares. The token amounts and value shown are the hook's own preview of that exact number, and the form will not submit until the preview matches what you entered.
+
+| Screen          | What it does                                                                                                                                                                                                     |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Overview        | Vault size, the leased and passive split, average rent, and a bond gauge per lease. The study figures from `analysis/` sit beside them.                                                                          |
+| Your capital    | Deposit or withdraw Charter LP shares, with token amounts quoted by the hook's `previewDeposit` and `previewWithdraw`.                                                                                           |
+| Lease board     | Every lease with its rent, capital, bond, equity against what it owes, and range. Open an empty slot, or bid on a leased one. Once a bid's five-minute delay has passed, anyone can press **Activate takeover**. |
+| Manager station | For the connected wallet's lease: bond coverage, rent burn, the estimated liquidation band, rebalance, bond top-up and exit.                                                                                     |
+| Logbook         | Every hook event since deployment, filterable, each linked to its transaction on the explorer.                                                                                                                   |
+
+The overview states the problem and the agreement before the live instruments, and its **Follow the capital** links walk through the other four screens. That explanation and the study stay readable while the snapshot loads or if the RPC is down; the live figures stay empty rather than show invented values. **Get test tokens** in the header works on every screen.
 
 ## Deployment
 
-| Contract | Address |
-| --- | --- |
+| Contract                                | Address                                                                                                                        |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Charter hook (and the Charter LP token) | [`0x47c2652A9AD7704A7eDbe8A276F213b59e51e0C0`](https://sepolia.uniscan.xyz/address/0x47c2652A9AD7704A7eDbe8A276F213b59e51e0C0) |
-| tWETH, currency0, 18 decimals | [`0x54A2CbC2947E3Ec15F1B8eDc3A25D61d070ae668`](https://sepolia.uniscan.xyz/address/0x54A2CbC2947E3Ec15F1B8eDc3A25D61d070ae668) |
-| tUSDC, currency1, 6 decimals | [`0xd508662f90226b081E749CB699658A7034721E0c`](https://sepolia.uniscan.xyz/address/0xd508662f90226b081E749CB699658A7034721E0c) |
-| Uniswap v4 PoolManager | [`0x00B036B58a818B1BC34d502D3fE730Db729e62AC`](https://sepolia.uniscan.xyz/address/0x00B036B58a818B1BC34d502D3fE730Db729e62AC) |
+| tWETH, currency0, 18 decimals           | [`0x54A2CbC2947E3Ec15F1B8eDc3A25D61d070ae668`](https://sepolia.uniscan.xyz/address/0x54A2CbC2947E3Ec15F1B8eDc3A25D61d070ae668) |
+| tUSDC, currency1, 6 decimals            | [`0xd508662f90226b081E749CB699658A7034721E0c`](https://sepolia.uniscan.xyz/address/0xd508662f90226b081E749CB699658A7034721E0c) |
+| Uniswap v4 PoolManager                  | [`0x00B036B58a818B1BC34d502D3fE730Db729e62AC`](https://sepolia.uniscan.xyz/address/0x00B036B58a818B1BC34d502D3fE730Db729e62AC) |
 
 The pool is tWETH / tUSDC with a 0.30% fee and 60-tick spacing. Addresses and the pool's parameters live in `src/chain/deployment.ts`, which mirrors `deployments/1301.json` at the repo root.
 
@@ -53,15 +57,15 @@ Three figures are estimates, and the interface says so where they appear:
 
 Every action is simulated against the chain before your wallet is asked to sign, so a call that would fail is stopped before you sign it. When the hook would revert, the custom error is decoded and shown as a plain sentence. For example, `BidTooLow` reads: "Rent must beat the current lease and any pending bid by at least 5% of their rate". Token approvals are requested only when the current allowance is short.
 
-| Action | Contract call |
-| --- | --- |
-| Supply capital, Withdraw | `deposit`, `withdraw`, with slippage limits from the preview |
-| Open lease (empty slot) | `openLease` |
-| Place bid (leased slot) | `bid`, which escrows the bond |
-| Activate takeover | `activate`, open to anyone once the delay has passed |
-| Cancel bid | `cancelBid`, for the bidder after the delay |
-| Rebalance range, Top up bond, Exit | `rebalance`, `topUpBond`, `exitLease` |
-| Mint test tokens | `mint` on each test token |
+| Action                             | Contract call                                                |
+| ---------------------------------- | ------------------------------------------------------------ |
+| Supply capital, Withdraw           | `deposit`, `withdraw`, with slippage limits from the preview |
+| Open lease (empty slot)            | `openLease`                                                  |
+| Place bid (leased slot)            | `bid`, which escrows the bond                                |
+| Activate takeover                  | `activate`, open to anyone once the delay has passed         |
+| Cancel bid                         | `cancelBid`, for the bidder after the delay                  |
+| Rebalance range, Top up bond, Exit | `rebalance`, `topUpBond`, `exitLease`                        |
+| Mint test tokens                   | `mint` on each test token                                    |
 
 Price ranges are entered in USDC per WETH and snapped to the pool's 60-tick spacing on submit. Capital is entered in USDC and converted to the hook's units at the settlement price.
 
@@ -76,9 +80,9 @@ npm run dev
 
 Open `http://localhost:3000`. No environment variables are needed. Two optional overrides:
 
-| Variable | Default |
-| --- | --- |
-| `NEXT_PUBLIC_RPC_URL` | `https://unichain-sepolia-rpc.publicnode.com` |
+| Variable               | Default                                          |
+| ---------------------- | ------------------------------------------------ |
+| `NEXT_PUBLIC_RPC_URL`  | `https://unichain-sepolia-rpc.publicnode.com`    |
 | `NEXT_PUBLIC_LOGS_API` | `https://unichain-sepolia.blockscout.com/api/v2` |
 
 The public endpoint `sepolia.unichain.org` stays as a fallback for reads. It is not the default because its load balancer often answers "block not found" for a block another of its nodes has just reported.
@@ -88,11 +92,11 @@ The public endpoint `sepolia.unichain.org` stays as a fallback for reads. It is 
 ```bash
 npm run lint        # ESLint, zero warnings allowed
 npm run typecheck   # TypeScript, strict
-npm test            # unit tests for the price, range and liquidation math
+npm test            # price, range, liquidation and value-preset precision tests
 npm run build
 ```
 
-Two browser checks drive Chrome through Puppeteer. They expect Chrome at `/usr/bin/google-chrome`; set `CHROME_PATH` to use another. Screenshots and a report land in `verification/`, which git ignores.
+Three browser checks drive Chrome through Puppeteer. They expect Chrome at `/usr/bin/google-chrome`; set `CHROME_PATH` to use another. Screenshots and a report land in `verification/`, which git ignores.
 
 **`npm run verify`** is read-only and runs against the live contracts. Start a production server first (`npm run build && npm run start -- --hostname 127.0.0.1 --port 3197`). It checks:
 
@@ -103,21 +107,25 @@ Two browser checks drive Chrome through Puppeteer. They expect Chrome at `/usr/b
 
 Its wallet refuses every transaction, so it cannot spend anything.
 
+**`npm run test:presentation`** uses the same running production server. It checks the first-deposit setup and value presets at mobile and desktop widths, guided navigation, the connected manager console at 375, 768, 1024 and 1440px, and automated accessibility rules. It also stalls and rejects RPC requests to confirm that the agreement, exact study figures and retry action stay available without inventing vault data. Its injected wallet refuses transaction requests.
+
 **`npm run e2e`** exercises every write. It starts its own anvil fork of Unichain Sepolia and a dev server pointed at it, and signs as a throwaway address the hook has never seen. It runs these steps, in order:
 
 1. connect
-2. mint test tokens
-3. deposit, approving both tokens
-4. a refused over-withdrawal
-5. a full withdrawal
-6. open a lease
-7. a bid below the required raise, refused by the hook with its reason
-8. a qualifying bid
-9. skip the five-minute delay on the fork, then activate the takeover
-10. rebalance
-11. top up the bond
-12. exit
-13. disconnect, reload to confirm it stays disconnected, then reconnect
+2. remove gas ETH and verify the explanation and disabled mint/deposit actions, then restore gas
+3. mint test tokens and continue to the deposit form
+4. choose a $100 estimate, approve both tokens and verify the exact shares minted on the hook
+5. hold a changed amount's quote request and verify submission stays disabled until it resolves
+6. a refused over-withdrawal
+7. a full withdrawal
+8. open a lease
+9. a bid below the required raise, refused by the hook with its reason
+10. a qualifying bid
+11. skip the five-minute delay on the fork, then activate the takeover
+12. rebalance
+13. top up the bond
+14. exit
+15. disconnect, reload to confirm it stays disconnected, then reconnect
 
 It needs Foundry's `anvil` on the path. Nothing it does reaches the real chain.
 
@@ -130,10 +138,10 @@ It needs Foundry's `anvil` on the path. Nothing it does reaches the real chain.
 
 ## Source layout
 
-| Path | Contents |
-| --- | --- |
-| `src/chain/` | Deployment, ABI, reads, log index, price and liquidation math, wallet and writes. No React. |
-| `src/state/` | The provider that polls the chain, and one model per form. |
-| `src/charter/` | The interface and its styles. |
-| `src/data/evidence.ts` | The four vault observations from `analysis/`. |
-| `scripts/` | The two browser checks and their shared helpers. |
+| Path                   | Contents                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------- |
+| `src/chain/`           | Deployment, ABI, reads, log index, price and liquidation math, wallet and writes. No React. |
+| `src/state/`           | The provider that polls the chain, and one model per form.                                  |
+| `src/charter/`         | The interface and its styles.                                                               |
+| `src/data/evidence.ts` | The four vault observations from `analysis/`.                                               |
+| `scripts/`             | The browser checks and their shared helpers.                                                |
