@@ -91,5 +91,9 @@ export interface Snapshot {
   bids: Bid[];
   events: ActivityEvent[];
   rentPaid: number;
+  /** Pool liquidity by price, scaled to 100 at the deepest point. */
+  depth: { price: number; depth: number }[];
+  /** False when the log index could not be reached on the last refresh. */
+  historySynced: boolean;
   wallet: Wallet | null;
 }

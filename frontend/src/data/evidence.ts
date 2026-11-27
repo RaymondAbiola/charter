@@ -1,4 +1,11 @@
-import type { EvidenceRow } from "./types.ts";
+export interface EvidenceRow {
+  vault: string;
+  startPrice: number;
+  endPrice: number;
+  days: number;
+  returnVsPassive: number;
+  skillVsPassive: number;
+}
 
 export const evidence: readonly EvidenceRow[] = [
   {
@@ -37,4 +44,4 @@ export const evidence: readonly EvidenceRow[] = [
 export const evidenceNote =
   "Depositors in three of four vaults ended about 13 to 14 percentage points behind a passive LP. Actual market making was close to passive. The gap was price exposure depositors never chose.";
 export const evidenceSource =
-  "Source: supplied study of four mainnet Uniswap v3 USDC/WETH vaults, sampled daily. Skill differences between vaults are within measurement noise. Historical observations, not Charter results.";
+  "Source: analysis/ in the Charter repo, four mainnet Uniswap v3 USDC/WETH vaults sampled daily. Skill differences between vaults are within measurement noise. Historical observations, not Charter results.";

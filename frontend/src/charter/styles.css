@@ -1299,18 +1299,18 @@
   flex: 1;
   min-width: 180px;
 }
-.c-mock-tools {
+.c-net-tools {
   position: relative;
   margin-left: auto;
   font-size: 11px;
 }
-.c-mock-tools summary {
+.c-net-tools summary {
   white-space: nowrap;
   color: var(--c-sand);
   border-bottom: 1px solid var(--c-line);
   padding-bottom: 8px;
 }
-.mock-controls {
+.c-net-panel {
   position: absolute;
   bottom: calc(100% + 16px);
   right: 0;
@@ -1323,17 +1323,17 @@
   box-shadow: 0 8px 24px #0003;
   z-index: 20;
 }
-.mock-controls label {
+.c-net-panel label {
   display: block;
   margin-bottom: 16px;
   font-size: 12px;
 }
-.mock-controls select {
+.c-net-panel select {
   display: block;
   width: 100%;
   margin-top: 8px;
 }
-.mock-controls p {
+.c-net-panel p {
   font-size: 11px;
   line-height: 1.6;
   color: var(--c-muted);

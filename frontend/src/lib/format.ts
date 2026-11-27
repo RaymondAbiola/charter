@@ -1,4 +1,5 @@
-import type { Address, Lease } from "../mock/types";
+import { deployment } from "../chain/deployment.ts";
+import type { Address, Lease } from "../chain/types.ts";
 
 export const money = (value: number, compact = false) =>
   new Intl.NumberFormat("en-US", {
@@ -31,13 +32,18 @@ export const humanTime = (ms: number) =>
         : `${Math.floor(ms / 86400000)}d ago`;
 export const held = (ms: number) =>
   `${Math.floor(ms / 86400000)}d ${Math.floor(ms / 3600000) % 24}h`;
+/** Equity over owed at which the hook liquidates: 100% plus the maintenance margin. */
+export const LIQUIDATION = 100 + deployment.maintenanceBps / 100;
+export const coverage = (lease: Lease) =>
+  lease.debt ? (lease.equity / lease.debt) * 100 : 0;
 export const health = (lease: Lease) =>
-  lease.equity / lease.debt < 1.01
+  coverage(lease) < LIQUIDATION + 2
     ? "At risk"
-    : lease.equity / lease.debt < 1.06
+    : coverage(lease) < LIQUIDATION + 5
       ? "Watch"
       : "Healthy";
-export const coverage = (lease: Lease) => (lease.equity / lease.debt) * 100;
+export const bound = (price: number) =>
+  price <= 0 || !Number.isFinite(price) ? "None in reach" : money(price);
 export const parseShares = (value: string): bigint => {
   if (!/^\d{1,12}(\.\d{0,18})?$/.test(value))
     throw new Error("Use a positive number with up to 18 decimal places.");

@@ -18,12 +18,14 @@ export const priceFromSqrtX96 = (sqrtX96: bigint) =>
   (Number(sqrtX96) / 2 ** 96) ** 2 / SCALE;
 export const priceAtTick = (tick: number) => 1.0001 ** tick / SCALE;
 
+/** The exact, unrounded tick for a price. */
+export const tickOf = (price: number) => Math.log(price * SCALE) / LOG_BASE;
+
 export function tickAtPrice(
   price: number,
   spacing: number = deployment.tickSpacing,
 ) {
-  const raw = Math.log(price * SCALE) / LOG_BASE;
-  const tick = Math.round(raw / spacing) * spacing;
+  const tick = Math.round(tickOf(price) / spacing) * spacing;
   return Math.max(-FULL_TICK, Math.min(FULL_TICK, tick));
 }
 

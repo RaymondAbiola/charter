@@ -2,74 +2,131 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
-import { createMockClient, type MockClient } from "@/mock/client";
-import { accounts } from "@/mock/seed";
-import type { Persona, Scenario, Snapshot } from "@/mock/types";
+import { createReader } from "@/chain/read";
+import {
+  connect as connectWallet,
+  connected,
+  createWriter,
+} from "@/chain/wallet";
+import type { Address, Snapshot } from "@/chain/types";
+
+type Status = "loading" | "ready" | "error";
 
 interface State {
-  client: MockClient;
-  data: Snapshot;
-  persona: Persona;
-  scenario: Scenario;
+  reader: ReturnType<typeof createReader>;
+  writer: ReturnType<typeof createWriter>;
+  data: Snapshot | null;
+  status: Status;
+  account: Address | null;
   now: number;
-  setPersona: (persona: Persona) => void;
-  cyclePersona: () => void;
-  setScenario: (scenario: Scenario) => void;
-  refresh: () => void;
+  connect: () => Promise<void>;
+  connectError: string;
+  refresh: () => Promise<void>;
 }
+
+const POLL_MS = 6000;
 const Context = createContext<State | null>(null);
-export function MockProvider({ children }: { children: ReactNode }) {
-  const [client] = useState(() => createMockClient());
-  const [raw, setRaw] = useState(() => client.snapshot());
-  const [persona, setPersona] = useState<Persona>("visitor");
-  const [scenario, setScenario] = useState<Scenario>("ready");
-  const [elapsed, setElapsed] = useState(0);
+
+export function ChainProvider({ children }: { children: ReactNode }) {
+  const [reader] = useState(() => createReader());
+  const [writer] = useState(() => createWriter(reader.client));
+  const [data, setData] = useState<Snapshot | null>(null);
+  const [status, setStatus] = useState<Status>("loading");
+  const [account, setAccount] = useState<Address | null>(null);
+  const [connectError, setConnectError] = useState("");
+  // only read once a snapshot has loaded on the client, so server and client markup still agree
+  const [now, setNow] = useState(() => Date.now());
+  const accountRef = useRef<Address | null>(null);
+  const busy = useRef<Promise<void> | null>(null);
+
+  const refresh = useCallback(() => {
+    // one read at a time; callers that arrive mid-read wait for it and then read again
+    const run = async () => {
+      try {
+        const snap = await reader.read(accountRef.current);
+        setData(snap);
+        setStatus("ready");
+      } catch {
+        setStatus((s) => (s === "ready" ? s : "error"));
+      }
+    };
+    const next = (busy.current ?? Promise.resolve()).then(run);
+    busy.current = next;
+    return next;
+  }, [reader]);
+
+  const select = useCallback(
+    (next: Address | null) => {
+      accountRef.current = next;
+      setAccount(next);
+      void refresh();
+    },
+    [refresh],
+  );
+
   useEffect(() => {
-    const timer = setInterval(() => setElapsed((value) => value + 1000), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const data =
-    scenario === "empty"
-      ? {
-          ...raw,
-          leases: [],
-          bids: [],
-          events: [],
-          balances: { [accounts.depositor]: 0n, [accounts.manager]: 0n },
-        }
-      : raw;
+    const clock = setInterval(() => setNow(Date.now()), 1000);
+    const poll = setInterval(() => void refresh(), POLL_MS);
+    void connected()
+      .then((a) => select(a))
+      .catch(() => select(null));
+    const eth = window.ethereum;
+    const onAccounts = (accounts: unknown) =>
+      select(((accounts as Address[])[0] ?? null) as Address | null);
+    eth?.on?.("accountsChanged", onAccounts);
+    return () => {
+      clearInterval(clock);
+      clearInterval(poll);
+      eth?.removeListener?.("accountsChanged", onAccounts);
+    };
+  }, [refresh, select]);
+
+  const connect = async () => {
+    setConnectError("");
+    try {
+      select(await connectWallet());
+    } catch (error) {
+      setConnectError(
+        error instanceof Error ? error.message : "The wallet did not connect.",
+      );
+    }
+  };
+
   return (
     <Context.Provider
       value={{
-        client,
+        reader,
+        writer,
         data,
-        persona,
-        scenario,
-        now: raw.startedAt + elapsed,
-        setPersona,
-        setScenario,
-        cyclePersona: () =>
-          setPersona((value) =>
-            value === "visitor"
-              ? "depositor"
-              : value === "depositor"
-                ? "manager"
-                : "visitor",
-          ),
-        refresh: () => setRaw(client.snapshot()),
+        status,
+        account,
+        now,
+        connect,
+        connectError,
+        refresh: () => refresh(),
       }}
     >
       {children}
     </Context.Provider>
   );
 }
-export function useMock() {
+
+export function useChain() {
   const state = useContext(Context);
-  if (!state) throw new Error("MockProvider is missing.");
+  if (!state) throw new Error("ChainProvider is missing.");
   return state;
+}
+
+/** For components that only render once the first snapshot has loaded. */
+export function useSnapshot() {
+  const state = useChain();
+  if (!state.data) throw new Error("No snapshot yet.");
+  return { ...state, data: state.data };
 }

@@ -15,29 +15,33 @@ import {
   YAxis,
 } from "recharts";
 import type { Screen } from "@/lib/screens";
-import { MockControls } from "./mock-controls";
-import { useMock } from "@/state/provider";
+import { NetworkPanel } from "./network";
+import { useChain, useSnapshot } from "@/state/provider";
 import {
   useActivity,
   useBidForm,
   useDepositForm,
   useManagerForm,
   useMetrics,
+  useTakeover,
 } from "@/state/models";
-import { accounts } from "@/mock/seed";
-import { depth } from "@/mock/charts";
-import { evidence, evidenceNote, evidenceSource } from "@/mock/evidence";
+import { deployment } from "@/chain/deployment";
+import { evidence, evidenceNote, evidenceSource } from "@/data/evidence";
 import {
   address,
+  bound,
   coverage,
   health,
   held,
   humanTime,
+  LIQUIDATION,
   money,
   percent,
   token,
 } from "@/lib/format";
-import type { PriceRange } from "@/mock/types";
+import type { PriceRange } from "@/chain/types";
+
+const WAITING = "Waiting for wallet and block...";
 
 const pages: [Screen, string, string][] = [
   ["overview", "Overview", "01"],
@@ -47,7 +51,7 @@ const pages: [Screen, string, string][] = [
   ["activity", "Logbook", "05"],
 ];
 export function Charter({ screen }: { screen: Screen }) {
-  const { persona, cyclePersona, scenario, setScenario } = useMock();
+  const { status, account, connect, connectError, data, refresh } = useChain();
   return (
     <div className="nautical">
       <a className="c-skip" href="#charter-main">
@@ -63,11 +67,11 @@ export function Charter({ screen }: { screen: Screen }) {
         <div className="c-pool">
           <p>POOL / 001</p>
           <strong>
-            USDC
+            tWETH
             <br />
-            <span>/ WETH</span>
+            <span>/ tUSDC</span>
           </strong>
-          <small>UNISWAP V4 · 0.05%</small>
+          <small>UNISWAP V4 · 0.30% · UNICHAIN SEPOLIA</small>
         </div>
         <nav aria-label="Charter screens">
           {pages.map(([key, label, index]) => (
@@ -84,11 +88,11 @@ export function Charter({ screen }: { screen: Screen }) {
         </nav>
         <div className="c-sidebar-foot">
           <span className="c-dot" />
-          LOCAL MOCK DATA
+          UNICHAIN SEPOLIA
           <p>
-            No wallet connection.
+            Test tokens only.
             <br />
-            No capital at risk.
+            No real capital at risk.
           </p>
         </div>
       </aside>
@@ -96,15 +100,13 @@ export function Charter({ screen }: { screen: Screen }) {
         <header className="c-header">
           <span>CHARTER / OPERATIONS</span>
           <p>
-            USDC / WETH <b>● MOCK</b>
+            tWETH / tUSDC <b>● LIVE</b>
           </p>
           <button
-            onClick={cyclePersona}
-            title="Mock wallet: click to cycle personas"
+            onClick={() => void connect()}
+            title={connectError || account || "Connect a browser wallet"}
           >
-            {persona === "visitor"
-              ? "Connect wallet"
-              : `${persona} · ${address(accounts[persona])}`}{" "}
+            {account ? address(account) : "Connect wallet"}{" "}
             <span aria-hidden="true">↗</span>
           </button>
         </header>
@@ -117,25 +119,27 @@ export function Charter({ screen }: { screen: Screen }) {
               <h1>{pages.find(([key]) => key === screen)?.[1]}</h1>
             </div>
             <span>
-              USD DENOMINATED
+              USDC DENOMINATED
               <br />
-              SIMULATED SNAPSHOT
+              {data ? `BLOCK ${data.block.toLocaleString("en-US")}` : "LIVE"}
             </span>
           </div>
-          {scenario === "loading" ? (
+          {connectError && (
+            <p className="c-error" role="alert">
+              {connectError}
+            </p>
+          )}
+          {status === "loading" || (!data && status !== "error") ? (
             <section className="c-state" role="status">
               <div className="c-state-instrument" />
               <h2>Reading the instruments.</h2>
-              <p>Waiting for the simulated vault snapshot.</p>
+              <p>Waiting for the vault on Unichain Sepolia.</p>
             </section>
-          ) : scenario === "error" ? (
+          ) : !data ? (
             <section className="c-state" role="alert">
-              <h2>Snapshot signal unavailable.</h2>
-              <p>The simulated read failed. Retry to restore the data.</p>
-              <button
-                className="c-primary"
-                onClick={() => setScenario("ready")}
-              >
+              <h2>Chain signal unavailable.</h2>
+              <p>The RPC did not answer. Retry to read the vault again.</p>
+              <button className="c-primary" onClick={() => void refresh()}>
                 Retry read →
               </button>
             </section>
@@ -153,10 +157,10 @@ export function Charter({ screen }: { screen: Screen }) {
           <footer className="c-footer">
             <span>UHI-11 / UNISWAP V4</span>
             <p>
-              All vault positions, bids and risk bands are mock. The study
-              figures are historical observations.
+              Live on Unichain Sepolia with test tokens. The study figures are
+              historical observations.
             </p>
-            <MockControls />
+            {data && <NetworkPanel />}
           </footer>
         </main>
       </div>
@@ -165,11 +169,16 @@ export function Charter({ screen }: { screen: Screen }) {
 }
 function Gauge({ ratio, label }: { ratio: number; label: string }) {
   const p = Math.max(0, Math.min(1, (ratio - 100) / 15));
-  const color = ratio < 101 ? "#eda58b" : ratio < 106 ? "#d8b878" : "#9bc4b3";
+  const color =
+    ratio < LIQUIDATION + 2
+      ? "#eda58b"
+      : ratio < LIQUIDATION + 5
+        ? "#d8b878"
+        : "#9bc4b3";
   return (
     <figure
       className="c-gauge"
-      aria-label={`${label}: ${percent(ratio)} equity versus amount owed. Liquidation threshold 100 percent.`}
+      aria-label={`${label}: ${percent(ratio)} equity versus amount owed. Liquidation threshold ${LIQUIDATION} percent.`}
     >
       <svg viewBox="0 0 240 150" role="img">
         <title>{`${label} ${percent(ratio)}`}</title>
@@ -222,14 +231,14 @@ function Gauge({ ratio, label }: { ratio: number; label: string }) {
         </text>
       </svg>
       <figcaption>
-        <span>100% / LIQUIDATION</span>
+        <span>{LIQUIDATION}% / LIQUIDATION</span>
         <span>115%</span>
       </figcaption>
     </figure>
   );
 }
 function Overview() {
-  const { data } = useMock();
+  const { data } = useSnapshot();
   const m = useMetrics();
   return (
     <>
@@ -463,7 +472,14 @@ function Range({
   onChange?: (range: PriceRange) => void;
   liquidation?: PriceRange;
 }) {
-  const { data } = useMock();
+  const { data } = useSnapshot();
+  const lo = Math.round((data.price * 0.7) / 10) * 10;
+  const hi = Math.round((data.price * 1.3) / 10) * 10;
+  const marks = liquidation
+    ? [liquidation.lower, liquidation.upper].filter(
+        (p) => p > 0 && Number.isFinite(p),
+      )
+    : [];
   return (
     <div className="c-range">
       <div className="c-panel-heading">
@@ -473,18 +489,19 @@ function Range({
       <div
         className="c-chart-paper"
         role="img"
-        aria-label={`Selected price range ${range.lower} to ${range.upper}. Current price ${data.price}.${liquidation ? ` Liquidation bounds ${liquidation.lower} and ${liquidation.upper}.` : ""}`}
+        aria-label={`Selected price range ${range.lower} to ${range.upper}. Current price ${Math.round(data.price)}.${liquidation ? ` Liquidation bounds ${bound(liquidation.lower)} and ${bound(liquidation.upper)}.` : ""}`}
       >
         <ResponsiveContainer width="100%" height={240}>
           <ComposedChart
-            data={depth}
+            data={data.depth}
             margin={{ top: 24, right: 16, left: 0, bottom: 8 }}
           >
             <CartesianGrid stroke="#49616c" strokeOpacity={0.6} />
             <XAxis
               dataKey="price"
               type="number"
-              domain={[2200, 3600]}
+              domain={[lo, hi]}
+              tickFormatter={(v) => Math.round(v).toLocaleString("en-US")}
               tick={{ fill: "#c8d2d5", fontSize: 10 }}
               tickLine={false}
               axisLine={false}
@@ -517,20 +534,14 @@ function Range({
                 position: "insideTopRight",
               }}
             />
-            {liquidation && (
-              <>
-                <ReferenceLine
-                  x={liquidation.lower}
-                  stroke="#eda58b"
-                  strokeDasharray="2 3"
-                />
-                <ReferenceLine
-                  x={liquidation.upper}
-                  stroke="#eda58b"
-                  strokeDasharray="2 3"
-                />
-              </>
-            )}
+            {marks.map((p) => (
+              <ReferenceLine
+                key={p}
+                x={p}
+                stroke="#eda58b"
+                strokeDasharray="2 3"
+              />
+            ))}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -541,14 +552,14 @@ function Range({
             <input
               type="range"
               aria-label="Lower price"
-              min="2200"
-              max="3400"
-              step="20"
+              min={lo}
+              max={hi - 10}
+              step="10"
               value={range.lower}
               onChange={(e) =>
                 onChange({
                   ...range,
-                  lower: Math.min(Number(e.target.value), range.upper - 20),
+                  lower: Math.min(Number(e.target.value), range.upper - 10),
                 })
               }
             />
@@ -558,14 +569,14 @@ function Range({
             <input
               type="range"
               aria-label="Upper price"
-              min="2400"
-              max="3600"
-              step="20"
+              min={lo + 10}
+              max={hi}
+              step="10"
               value={range.upper}
               onChange={(e) =>
                 onChange({
                   ...range,
-                  upper: Math.max(Number(e.target.value), range.lower + 20),
+                  upper: Math.max(Number(e.target.value), range.lower + 10),
                 })
               }
             />
@@ -573,10 +584,9 @@ function Range({
         </div>
       )}
       <p className="c-source">
-        Illustrative liquidity depth. Adjust bounds with the sliders.{" "}
-        {liquidation
-          ? "Coral lines mark mock liquidation prices."
-          : "All prices in USDC per WETH."}
+        Pool liquidity by price, from the pool&apos;s own events. Prices in USDC
+        per WETH, snapped to 60-tick spacing on submit.{" "}
+        {liquidation && "Coral lines mark estimated liquidation prices."}
       </p>
     </div>
   );
@@ -584,7 +594,8 @@ function Range({
 function Deposit() {
   const form = useDepositForm();
   const m = useMetrics();
-  const { persona } = useMock();
+  const { account, data } = useSnapshot();
+  const w = data.wallet;
   return (
     <div className="c-capital-layout">
       <section className="c-position">
@@ -594,7 +605,7 @@ function Deposit() {
         <dl>
           <div>
             <dt>Charter LP shares</dt>
-            <dd>{token(m.shares, 18, 2)}</dd>
+            <dd>{token(m.shares, 18, 8)}</dd>
           </div>
           <div>
             <dt>Owed: passive + rent</dt>
@@ -604,7 +615,7 @@ function Deposit() {
             <dt>Passive component</dt>
             <dd>{money(m.baseline)}</dd>
           </div>
-          <div>
+          <div title="Your pro-rata share of all rent paid into the vault, at your current holding">
             <dt>Rent earned to date</dt>
             <dd className="c-brass">{money(m.earned)}</dd>
           </div>
@@ -646,18 +657,18 @@ function Deposit() {
               <span>LIVE PREVIEW</span>
             </p>
             <div>
-              <span className="c-token-symbol">U</span>
-              <span>
-                USDC<small>Token 0</small>
-              </span>
-              <strong>{token(form.quote[0], 6)}</strong>
-            </div>
-            <div>
               <span className="c-token-symbol">E</span>
               <span>
-                WETH<small>Token 1</small>
+                tWETH<small>Token 0</small>
               </span>
-              <strong>{token(form.quote[1], 18)}</strong>
+              <strong>{token(form.quote[0], 18)}</strong>
+            </div>
+            <div>
+              <span className="c-token-symbol">U</span>
+              <span>
+                tUSDC<small>Token 1</small>
+              </span>
+              <strong>{token(form.quote[1], 6)}</strong>
             </div>
           </div>
           <label>
@@ -673,9 +684,9 @@ function Deposit() {
             />
           </label>
           <p className="c-small">
-            {persona === "visitor"
-              ? "Connect the mock wallet to try a deposit. Click again to change persona."
-              : "Slippage sets maximum token inputs or minimum token outputs."}
+            {account && w
+              ? `Wallet: ${token(w.weth, 18, 4)} tWETH · ${token(w.usdc, 6, 2)} tUSDC. Slippage sets maximum token inputs or minimum token outputs.`
+              : "Connect a wallet to deposit. Reading works without one."}
           </p>
           {(form.error || form.validation) && (
             <p className="c-error" role="alert">
@@ -685,12 +696,9 @@ function Deposit() {
           <p role="status" className="c-feedback">
             {form.message}
           </p>
-          <button
-            className="c-primary"
-            disabled={form.pending || persona === "visitor"}
-          >
+          <button className="c-primary" disabled={form.pending || !account}>
             {form.pending
-              ? "Processing mock action..."
+              ? WAITING
               : form.mode === "deposit"
                 ? "Supply capital →"
                 : "Withdraw shares →"}
@@ -701,8 +709,9 @@ function Deposit() {
   );
 }
 function Leases() {
-  const { data, now, persona } = useMock();
+  const { data, now, account } = useSnapshot();
   const form = useBidForm();
+  const takeover = useTakeover();
   return (
     <>
       <section className="c-lease-register">
@@ -784,15 +793,36 @@ function Leases() {
         )}
       </section>
       {data.bids.map((bid) => (
-        <div className="c-takeover" key={bid.id}>
+        <div className="c-takeover" key={bid.slot}>
           <div>
             <span className="c-eyebrow">
               TAKEOVER NOTICE / SLOT 0{bid.slot}
             </span>
             <p>
               <b title={bid.manager}>{address(bid.manager)}</b> offers{" "}
-              <b>{percent(bid.rentRate)}</b> annual rent.
+              <b>{percent(bid.rentRate)}</b> annual rent on{" "}
+              {money(bid.capital, true)} with a {money(bid.bond, true)} bond.
             </p>
+            {bid.takeoverAt <= now && (
+              <>
+                <button
+                  className="c-outline"
+                  disabled={takeover.pending || !account}
+                  onClick={() => void takeover.activate(bid.slot)}
+                >
+                  {takeover.pending ? WAITING : "Activate takeover →"}
+                </button>{" "}
+                {account?.toLowerCase() === bid.manager.toLowerCase() && (
+                  <button
+                    className="c-text-button"
+                    disabled={takeover.pending}
+                    onClick={() => void takeover.cancel(bid.slot)}
+                  >
+                    Cancel bid
+                  </button>
+                )}
+              </>
+            )}
           </div>
           <strong>
             {bid.takeoverAt > now
@@ -802,6 +832,16 @@ function Leases() {
           </strong>
         </div>
       ))}
+      {takeover.error && (
+        <p role="alert" className="c-error">
+          {takeover.error}
+        </p>
+      )}
+      {takeover.message && (
+        <p role="status" className="c-feedback">
+          {takeover.message}
+        </p>
+      )}
       <div className="c-auction-layout">
         <section className="c-bid-form">
           <div className="c-panel-heading">
@@ -816,11 +856,17 @@ function Leases() {
                   value={form.slot}
                   onChange={(e) => form.setSlot(e.target.value)}
                 >
-                  {data.leases.map((lease) => (
-                    <option key={lease.slot} value={lease.slot}>
-                      Slot 0{lease.slot}
-                    </option>
-                  ))}
+                  {Array.from({ length: deployment.maxLeases }, (_, i) => {
+                    const lease = data.leases.find((l) => l.slot === i);
+                    return (
+                      <option key={i} value={i}>
+                        Slot 0{i} ·{" "}
+                        {lease
+                          ? `leased at ${percent(lease.rentRate)}`
+                          : "open"}
+                      </option>
+                    );
+                  })}
                 </select>
               </label>
               <label>
@@ -834,7 +880,7 @@ function Leases() {
                 />
               </label>
               <label>
-                CAPITAL (USD)
+                CAPITAL (USDC)
                 <input
                   type="number"
                   min="1"
@@ -843,7 +889,7 @@ function Leases() {
                 />
               </label>
               <label>
-                BOND (USD)
+                BOND (tUSDC)
                 <input
                   type="number"
                   min="1"
@@ -853,8 +899,10 @@ function Leases() {
               </label>
             </div>
             <p className="c-small">
-              A higher rate takes over the slot. The mock requires a bond of at
-              least 5.00% of capital.
+              {form.occupied
+                ? `This slot is leased. Offer at least ${percent(form.minRent)} to qualify; the takeover can run five minutes after the bid and settles the current manager first.`
+                : "This slot is open. The lease starts in this transaction."}{" "}
+              Minimum bond {money(form.minBond)}, 5% of capital.
             </p>
             {form.error && (
               <p role="alert" className="c-error">
@@ -864,15 +912,14 @@ function Leases() {
             <p role="status" className="c-feedback">
               {form.message}
             </p>
-            <button
-              className="c-primary"
-              disabled={form.pending || !data.leases.length}
-            >
+            <button className="c-primary" disabled={form.pending || !account}>
               {form.pending
-                ? "Placing mock bid..."
-                : persona === "manager"
-                  ? "Place mock bid →"
-                  : "Submit bid (Manager persona required)"}
+                ? WAITING
+                : !account
+                  ? "Connect a wallet to lease"
+                  : form.occupied
+                    ? "Place bid →"
+                    : "Open lease →"}
             </button>
           </form>
         </section>
@@ -882,18 +929,18 @@ function Leases() {
   );
 }
 function Manager() {
-  const { persona, setPersona } = useMock();
+  const { account, connect } = useSnapshot();
   const form = useManagerForm();
-  if (persona !== "manager")
+  if (!account)
     return (
       <section className="c-state">
         <p className="c-eyebrow">MANAGER STATION</p>
         <h2>Your lease, on the instruments.</h2>
         <p>
-          Switch to the Manager mock persona to inspect and operate the lease.
+          Connect the wallet that manages a lease to inspect and operate it.
         </p>
-        <button className="c-primary" onClick={() => setPersona("manager")}>
-          Use Manager persona →
+        <button className="c-primary" onClick={() => void connect()}>
+          Connect wallet →
         </button>
       </section>
     );
@@ -903,7 +950,7 @@ function Manager() {
         <h2>No lease on station.</h2>
         <p>
           {form.message ||
-            "Capital has returned to passive. Place a rental offer to manage a slot."}
+            "This wallet has no lease. Open a slot or bid on one from the lease board."}
         </p>
         <Link href="/leases">Open lease board →</Link>
       </section>
@@ -918,7 +965,7 @@ function Manager() {
             <span>SLOT 0{lease.slot}</span>
           </div>
           <Gauge ratio={coverage(lease)} label="Manager bond coverage" />
-          <p>Liquidation at 100.00% equity / owed.</p>
+          <p>Liquidation below {percent(LIQUIDATION)} equity / owed.</p>
         </section>
         <section className="c-manager-numbers">
           <div>
@@ -951,27 +998,28 @@ function Manager() {
           <div className="c-danger-band">
             <span>LIQUIDATION BAND</span>
             <b>
-              {money(lease.liquidation.lower)} to{" "}
-              {money(lease.liquidation.upper)}
+              {bound(lease.liquidation.lower)} to{" "}
+              {bound(lease.liquidation.upper)}
             </b>
           </div>
           <p className="c-small">
-            Crossing either bound would liquidate this illustrative lease. The
-            mock expands the band when the bond is topped up.
+            Estimated from the hook&apos;s own liquidation test, holding fees
+            and rent at today&apos;s values. A swap past either bound would
+            liquidate the lease inside that swap.
           </p>
           <button
             className="c-primary"
             disabled={form.pending}
             onClick={() => form.act("rebalance")}
           >
-            Rebalance range →
+            {form.pending ? WAITING : "Rebalance range →"}
           </button>
         </section>
         <aside className="c-bond-ops">
           <p className="c-eyebrow">BOND MAINTENANCE</p>
           <h2>Add a margin of safety.</h2>
           <label>
-            TOP-UP AMOUNT (USD)
+            TOP-UP AMOUNT (tUSDC)
             <input
               type="number"
               min="1"
@@ -1031,13 +1079,16 @@ function Manager() {
   );
 }
 function Activity() {
-  const { now } = useMock();
+  const { now, data } = useSnapshot();
   const filter = useActivity();
   return (
     <section className="c-logbook">
       <div className="c-panel-heading">
         <h2>The capital record</h2>
-        <span>{filter.events.length} ENTRIES / MOCK</span>
+        <span>
+          {filter.events.length} ENTRIES /{" "}
+          {data.historySynced ? "LIVE" : "INDEX LAGGING"}
+        </span>
       </div>
       <div className="c-log-filters">
         <label>
@@ -1056,8 +1107,14 @@ function Activity() {
               "BidPlaced",
               "LeaseTakenOver",
               "Rebalanced",
+              "RentPaid",
+              "BondToppedUp",
               "Liquidated",
+              "LeaseRecalled",
               "LeaseEnded",
+              "BidRefunded",
+              "BidVoided",
+              "Repassivated",
             ].map((kind) => (
               <option key={kind}>{kind}</option>
             ))}
@@ -1087,10 +1144,18 @@ function Activity() {
                 <span title={event.address}>{address(event.address)}</span>
               </div>
               <div className="c-log-value">
-                <strong>{money(event.amount)}</strong>
-                <time title={new Date(event.at).toISOString()}>
-                  {humanTime(Math.max(0, now - event.at))}
-                </time>
+                <strong>
+                  {event.amount === null ? "" : money(event.amount)}
+                </strong>
+                <a
+                  href={`${deployment.explorer}/tx/${event.tx}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <time title={new Date(event.at).toISOString()}>
+                    {humanTime(Math.max(0, now - event.at))} ↗
+                  </time>
+                </a>
               </div>
             </li>
           ))}
@@ -1098,7 +1163,7 @@ function Activity() {
       ) : (
         <div className="c-empty">
           <h3>No entries on this bearing.</h3>
-          <p>Change the event filter or try a mock action.</p>
+          <p>Change the event filter or make the first move.</p>
         </div>
       )}
     </section>

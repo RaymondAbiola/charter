@@ -1,49 +1,13 @@
-import type { Log, PublicClient } from "viem";
 import { charterAbi } from "./abi.ts";
 import { deployment } from "./deployment.ts";
+import { fetchLogs, type DecodedLog } from "./logs.ts";
 import { priceAtTick, unitsValue, usdc, value, weth } from "./math.ts";
 import type { ActivityEvent, Address, EventKind } from "./types.ts";
 
-// publicnode caps eth_getLogs at 50,000 blocks
-const SPAN = 49_999n;
+export type RawEvent = DecodedLog;
 
-export interface RawEvent {
-  eventName: string;
-  args: Record<string, unknown>;
-  blockNumber: bigint;
-  logIndex: number;
-  transactionHash: `0x${string}`;
-}
-
-export async function fetchEvents(
-  client: PublicClient,
-  from: bigint,
-  to: bigint,
-) {
-  const spans: [bigint, bigint][] = [];
-  for (let start = from; start <= to; start += SPAN + 1n)
-    spans.push([start, start + SPAN < to ? start + SPAN : to]);
-  const pages = await Promise.all(
-    spans.map(([fromBlock, toBlock]) =>
-      client.getContractEvents({
-        address: deployment.charter,
-        abi: charterAbi,
-        fromBlock,
-        toBlock,
-      }),
-    ),
-  );
-  return pages.flat().map(
-    (log) =>
-      ({
-        eventName: (log as { eventName: string }).eventName,
-        args: (log as { args: Record<string, unknown> }).args,
-        blockNumber: (log as Log).blockNumber!,
-        logIndex: (log as Log).logIndex!,
-        transactionHash: (log as Log).transactionHash!,
-      }) satisfies RawEvent,
-  );
-}
+export const fetchEvents = (known: Set<string>) =>
+  fetchLogs(charterAbi, deployment.charter, known, deployment.deployBlock);
 
 const ZERO: Address = "0x0000000000000000000000000000000000000000";
 const pct = (pips: number) => `${(pips / 10_000).toFixed(2)}% annual rent`;
@@ -52,14 +16,9 @@ const priceRange = (lo: unknown, hi: unknown) =>
   `$${Math.round(priceAtTick(Number(lo))).toLocaleString("en-US")} to $${Math.round(priceAtTick(Number(hi))).toLocaleString("en-US")}`;
 
 /**
- * Turns hook logs into logbook entries, newest first. Token amounts are valued at today's
- * price. Unichain produces one block per second, so a block's time is read off the latest block.
+ * Turns hook logs into logbook entries, newest first. Token amounts are valued at today's price.
  */
-export function toActivity(
-  raw: RawEvent[],
-  price: number,
-  latest: { number: bigint; at: number },
-) {
+export function toActivity(raw: RawEvent[], price: number) {
   const units = new Map<number, bigint>();
   const managers = new Map<number, Address>();
   const out: ActivityEvent[] = [];
@@ -218,7 +177,7 @@ export function toActivity(
       amount,
       detail,
       shares,
-      at: latest.at - Number(latest.number - e.blockNumber) * 1000,
+      at: e.at,
       tx: e.transactionHash,
     });
   }

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { MockProvider } from "@/state/provider";
+import { ChainProvider } from "@/state/provider";
 import "./globals.css";
 import "@/charter/styles.css";
 
@@ -20,7 +20,7 @@ const instrument = localFont({
 export const metadata: Metadata = {
   title: "Charter | Liquidity under contract",
   description:
-    "Managers pay rent to run your liquidity. You are owed what passive would have earned. Explore the Charter vault with local mock data.",
+    "Managers pay rent to run your liquidity. You are owed what passive would have earned. Live on Unichain Sepolia with test tokens.",
 };
 export default function RootLayout({
   children,
@@ -28,7 +28,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${mono.variable} ${instrument.variable}`}>
-        <MockProvider>{children}</MockProvider>
+        <ChainProvider>{children}</ChainProvider>
       </body>
     </html>
   );

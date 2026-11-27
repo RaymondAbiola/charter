@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test --test-isolation=none src/mock/client.test.ts src/chain/math.test.ts",
+    "test": "node --experimental-strip-types --test --test-isolation=none src/chain/math.test.ts src/lib/format.test.ts",
     "verify": "node scripts/verify.mjs"
   },
   "dependencies": {

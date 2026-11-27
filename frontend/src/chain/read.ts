@@ -1,8 +1,16 @@
-import { createPublicClient, erc20Abi, http, type PublicClient } from "viem";
+import {
+  createPublicClient,
+  erc20Abi,
+  fallback,
+  http,
+  type PublicClient,
+} from "viem";
 import { unichainSepolia } from "viem/chains";
 import { charterAbi } from "./abi.ts";
 import { deployment, rpcUrl } from "./deployment.ts";
+import { depthCurve, fetchPoolLogs, openRanges } from "./depth.ts";
 import { fetchEvents, toActivity, type RawEvent } from "./events.ts";
+import { logId } from "./logs.ts";
 import {
   amounts,
   FULL_TICK,
@@ -27,12 +35,32 @@ export function createReader(client?: PublicClient) {
     client ??
     (createPublicClient({
       chain: unichainSepolia,
-      transport: http(rpcUrl, { batch: false, retryCount: 3 }),
+      transport: fallback([
+        http(rpcUrl, { retryCount: 2 }),
+        http("https://sepolia.unichain.org", { retryCount: 2 }),
+      ]),
     }) as PublicClient);
-  const raw: RawEvent[] = [];
-  let scanned = deployment.deployBlock - 1n;
+  const hookLogs = new Map<string, RawEvent>();
+  const poolLogs = new Map<string, RawEvent>();
+  let synced = false;
+
+  // Pulls new history from the log index. A failure keeps what is already cached.
+  async function sync() {
+    try {
+      const [h, p] = await Promise.all([
+        fetchEvents(new Set(hookLogs.keys())),
+        fetchPoolLogs(new Set(poolLogs.keys())),
+      ]);
+      for (const e of h) hookLogs.set(logId(e), e);
+      for (const e of p) poolLogs.set(logId(e), e);
+      synced = true;
+    } catch {
+      synced = false;
+    }
+  }
 
   async function read(account: Address | null): Promise<Snapshot> {
+    const history = sync();
     const head = await pc.getBlock({ blockTag: "latest" });
     const blockNumber = head.number;
 
@@ -137,15 +165,10 @@ export function createReader(client?: PublicClient) {
         });
     });
 
-    if (blockNumber > scanned) {
-      raw.push(...(await fetchEvents(pc, scanned + 1n, blockNumber)));
-      scanned = blockNumber;
-    }
+    await history;
     const at = Number(head.timestamp) * 1000;
-    const { events, rentPaid } = toActivity(raw, price, {
-      number: blockNumber,
-      at,
-    });
+    const { events, rentPaid } = toActivity([...hookLogs.values()], price);
+    const ranges = openRanges([...poolLogs.values()]);
 
     let wallet: Snapshot["wallet"] = null;
     if (account) {
@@ -220,6 +243,8 @@ export function createReader(client?: PublicClient) {
       bids,
       events,
       rentPaid,
+      depth: depthCurve(ranges, price * 0.7, price * 1.3),
+      historySynced: synced,
       wallet,
     };
   }
